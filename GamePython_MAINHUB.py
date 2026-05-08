@@ -6,14 +6,14 @@ class App:
         pygame.init()
         self._running = True
         self._display_surf = None
-        self.size = self.weight, self.height = 1000, 1000
+        self.size = self.weight, self.height = 1200, 800
         self.FPS = 60
         self.clock = pygame.time.Clock()
         
         self.screen = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.background = pygame.Surface(self.screen.get_size()).convert()
-        self.background.fill((250, 250, 250))
-        pygame.display.set_caption("Welcome to GamePython!")
+        self.background.fill((153, 204, 255))
+        pygame.display.set_caption("GamePython Hub!")
         
     def draw(self):
         self.screen.blit(self.background, (0, 0))
