@@ -6,7 +6,7 @@ class App:
         pygame.init()
         self._running = True
         self._display_surf = None
-        self.size = self.weight, self.height = 640, 480
+        self.size = self.weight, self.height = 1000, 1000
         self.FPS = 60
         self.clock = pygame.time.Clock()
         
