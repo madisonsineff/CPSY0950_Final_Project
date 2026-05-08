@@ -22,7 +22,7 @@ class App:
 
         #adjusting font size and colors for different titles within the home hub
         self.title_font = pygame.font.SysFont("chalkboard", 52, bold=True)
-        self.button_font = pygame.font.SysFont("optima", 30)
+        self.button_font = pygame.font.SysFont("optima", 30, bold=True)
         self.message_font = pygame.font.SysFont("optima", 24)
         self.message = "Choose any game to launch!"
 
@@ -31,12 +31,60 @@ class App:
         # specific game scripts are located here as an access point from the home screen
         #make all updates to game scripts here 
         self.games = [
-            {"title": "Word Hunt", "script": base_dir / "word_hunt.py"},
-            {"title": "Four in a Row", "script": base_dir / "mini_golf.py"},
-            {"title": "Cup Pong", "script": base_dir / "cup_pong.py"},
+            {"title": "Word Hunt", "script": base_dir / "word_hunt.py", "image": base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
+            {"title": "Four in a Row", "script": base_dir / "mini_golf.py", "image": base_dir / "connect4background.jpg"},
+            {"title": "Cup Pong", "script": base_dir / "cup_pong.py", "image": base_dir / "cuppongbackground.webp"},
         ]
+
         #makes the buttons for game scripts into a clickable rectangle 
         self.buttons = self.build_buttons()
+        self.load_button_images()
+
+    def load_button_images(self):
+        for button in self.buttons:
+            rect = button["rect"]
+            image_path = button["game"].get("image")
+            image_zoom = button["game"].get("image_zoom", 1.0)
+            button["image"] = None
+            if not image_path:
+                continue
+
+            try:
+                loaded_image = pygame.image.load(str(image_path)).convert_alpha()
+                button["image"] = self.prepare_button_image(loaded_image, rect.size, image_zoom)
+            except (pygame.error, FileNotFoundError):
+                #if an image file is missing or unreadable, fallback drawing will be used
+                button["image"] = None
+
+    def prepare_button_image(self, image_surface, target_size, image_zoom=1.0):
+        target_w, target_h = target_size
+        source_w, source_h = image_surface.get_size()
+        zoom = max(0.1, float(image_zoom))
+
+        #zoom < 1 means show more of the source image while still filling the whole button
+        crop_w = min(source_w, max(1, int(round(target_w / zoom))))
+        crop_h = min(source_h, max(1, int(round(target_h / zoom))))
+
+        #keep crop aspect ratio aligned with the button to avoid distortion
+        target_ratio = target_w / target_h
+        crop_ratio = crop_w / crop_h
+        if crop_ratio > target_ratio:
+            crop_w = max(1, int(crop_h * target_ratio))
+        elif crop_ratio < target_ratio:
+            crop_h = max(1, int(crop_w / target_ratio))
+
+        crop_x = max(0, (source_w - crop_w) // 2)
+        crop_y = max(0, (source_h - crop_h) // 2)
+        cropped = image_surface.subsurface((crop_x, crop_y, crop_w, crop_h)).copy()
+
+        button_image = pygame.transform.smoothscale(cropped, (target_w, target_h))
+
+        #apply rounded corners so the image matches the button shape
+        mask_surface = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
+        pygame.draw.rect(mask_surface, (255, 255, 255, 255), mask_surface.get_rect(), border_radius=14)
+        button_image.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        return button_image
+
     #specific dimensions of the build buttons 
     def build_buttons(self):
         buttons = []
@@ -73,16 +121,31 @@ class App:
             rect = button["rect"]
             game = button["game"]
             is_hover = rect.collidepoint(mouse_pos) #checks whether the mouse is currently within the boundaries of a given button
-            color = (68, 121, 255) if is_hover else (45, 92, 210) #changes the color of the button to lighter blue when hovered over, and dark blue otherwise
-            pygame.draw.rect(self.screen, color, rect, border_radius=14) #draws a border around the button when hovered over for asthetic effect
-            pygame.draw.rect(self.screen, (15, 38, 100), rect, width=2, border_radius=14)
+            image = button.get("image")
+
+            if image is not None:
+                self.screen.blit(image, rect.topleft)
+                if is_hover:
+                    hover_overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                    hover_overlay.fill((255, 255, 255, 35))
+                    self.screen.blit(hover_overlay, rect.topleft)
+                pygame.draw.rect(self.screen, (15, 38, 100), rect, width=2, border_radius=14)
+            else:
+                color = (68, 121, 255) if is_hover else (45, 92, 210) #changes the color of the button to lighter blue when hovered over, and dark blue otherwise
+                pygame.draw.rect(self.screen, color, rect, border_radius=14) #draws a border around the button when hovered over for asthetic effect
+                pygame.draw.rect(self.screen, (15, 38, 100), rect, width=2, border_radius=14)
 
             text_surface = self.button_font.render(game["title"], True, (255, 255, 255)) #renders game titles in white
+            text_x = rect.centerx - text_surface.get_width() // 2
+            text_y = rect.centery - text_surface.get_height() // 2
+            outline_surface = self.button_font.render(game["title"], True, (0, 0, 0))
+            for dx, dy in [
+                (-2, 0), (2, 0), (0, -2), (0, 2),
+                (-1, -1), (1, -1), (-1, 1), (1, 1),
+            ]:
+                self.screen.blit(outline_surface, (text_x + dx, text_y + dy))
             #draws label centered inside the button
-            self.screen.blit(
-                text_surface,
-                (rect.centerx - text_surface.get_width() // 2, rect.centery - text_surface.get_height() // 2),
-            )
+            self.screen.blit(text_surface, (text_x, text_y))
 
         #renders the status message of launching
         message_surface = self.message_font.render(self.message, True, (20, 20, 60))
