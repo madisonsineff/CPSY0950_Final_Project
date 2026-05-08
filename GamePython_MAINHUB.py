@@ -21,9 +21,9 @@ class App:
         pygame.display.set_caption("GamePython Hub!")
 
         #adjusting font size and colors for different titles within the home hub
-        self.title_font = pygame.font.SysFont("arial", 52, bold=True)
-        self.button_font = pygame.font.SysFont("arial", 30, bold=True)
-        self.message_font = pygame.font.SysFont("arial", 24)
+        self.title_font = pygame.font.SysFont("chalkboard", 52, bold=True)
+        self.button_font = pygame.font.SysFont("optima", 30)
+        self.message_font = pygame.font.SysFont("optima", 24)
         self.message = "Choose any game to launch!"
 
         #this enales the main folder of GamePython_MAINHUB.py to be accessed so that future scripts (like scripts specific to the games) can be accessed and built relative to the home hub
