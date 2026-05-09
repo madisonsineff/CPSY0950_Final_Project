@@ -59,7 +59,6 @@ class App:
     def prepare_button_image(self, image_surface, target_size, image_zoom=1.0):
         target_w, target_h = target_size
         source_w, source_h = image_surface.get_size()
-        zoom = max(0.1, float(image_zoom))
 
         #zoom < 1 means show more of the source image while still filling the whole button
         crop_w = min(source_w, max(1, int(round(target_w / zoom))))
