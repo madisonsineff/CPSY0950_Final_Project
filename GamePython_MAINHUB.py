@@ -31,7 +31,7 @@ class App:
         # specific game scripts are located here as an access point from the home screen
         #make all updates to game scripts here 
         self.games = [
-            {"title": "Word Hunt", "script": base_dir / "word_hunt.py", "image": base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
+            {"title": "Anagrams", "script": base_dir / "anagrams.py", "image": base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
             {"title": "Four in a Row", "script": base_dir / "mini_golf.py", "image": base_dir / "connect4background.jpg"},
             {"title": "Cup Pong", "script": base_dir / "cup_pong.py", "image": base_dir / "cuppongbackground.webp"},
         ]

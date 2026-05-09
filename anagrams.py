@@ -1,0 +1,2 @@
+#this is the code for the anagrams game! The idea is to have this script launch when the user presses the "anagrams" button on the home page
+#we wanted to have a separate script for each game that can then go back to the home page at any tim e
