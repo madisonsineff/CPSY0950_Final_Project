@@ -245,7 +245,7 @@ class AnagramsGame:
         self.card_bg = (245, 240, 255)
         self.text_main = (0, 0, 0)
         self.accent = (0, 0, 0)
-        self.success = (108, 255, 63)
+        self.success = (51, 0, 102)
         self.alert = (245, 50, 50)
 
         self.font_title = pygame.font.SysFont("optima", 44, bold=True)
