@@ -243,8 +243,8 @@ class AnagramsGame:
 
         self.card_color = (30, 30, 46)
         self.card_bg = (245, 240, 255)
-        self.text_main = (30, 30, 46)
-        self.accent = (167, 117, 196)
+        self.text_main = (0, 0, 0)
+        self.accent = (0, 0, 0)
         self.success = (108, 255, 63)
         self.alert = (245, 50, 50)
 
