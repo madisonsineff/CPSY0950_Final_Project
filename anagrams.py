@@ -348,11 +348,10 @@ class AnagramsGame:
         self.screen.blit(title_surf, (w // 2 - title_surf.get_width() // 2, 60))
 
         rules = [
-            "You get one random letter scramble from five puzzles.",
-            "Within 2 minutes, submit as many different valid words as you can (from the puzzle’s word list).",
-            "Type your guess and press Enter. Words under 3 letters are not accepted.",
-            "Scoring: 6+ letters = 600, 5 = 500, 4 = 400, 3 = 300. Each word counts once.",
-            "Your total score is shown when time runs out. Then choose Play Again or Home.",
+            "Welcome to Anagrams! Try to make as many words as possible from the given scrambled letters.",
+            "Words must be at least 3 letters long and must be a valid word from the puzzle's word list.",
+            "Longer words earn more points, and repeated words will not be counted.",
+            "Type your guess and press Enter. Good luck!",
         ]
         y = 150
         for rule in rules:
