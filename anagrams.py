@@ -273,6 +273,48 @@ class AnagramsGame:
         self.valid_words = frozenset()
         self.guessed_words = set()
         self.found_words_display = []
+        self.word_bank_scroll = 0
+        self.word_bank_scroll_to_bottom = False
+        self.word_bank_panel_rect = self._word_bank_panel_rect()
+
+    def _word_bank_panel_rect(self):
+        w = self.size[0]
+        return pygame.Rect(80, 280, w - 160, 200)
+
+    def _word_bank_inner_rect(self, panel):
+        """Area below the title, reserved for wrapped words (scrollbar uses right strip)."""
+        return pygame.Rect(panel.x + 10, panel.y + 38, panel.width - 20, panel.height - 46)
+
+    def _layout_word_bank_rows(self, inner_w):
+        """Wrap words left-to-right; each row is a list of rendered surfaces."""
+        font = self.font_small
+        color = self.card_color
+        gap_x = 8
+        line_gap = 4
+        rows = []
+        row = []
+        row_w = 0
+        for word in self.found_words_display:
+            surf = font.render(word, True, color)
+            ww = surf.get_width()
+            if not row:
+                row.append(surf)
+                row_w = ww
+            elif row_w + gap_x + ww <= inner_w:
+                row.append(surf)
+                row_w += gap_x + ww
+            else:
+                rows.append(row)
+                row = [surf]
+                row_w = ww
+        if row:
+            rows.append(row)
+        row_heights = []
+        for r in rows:
+            rh = max(s.get_height() for s in r) + line_gap
+            row_heights.append(rh)
+        total_h = sum(row_heights)
+        return rows, row_heights, total_h
 
     def _candidate_words(self, entry):
         return sorted(
@@ -293,6 +335,8 @@ class AnagramsGame:
         self.found_words_display = []
         self.guess_buffer = ""
         self.feedback = "Type a word (3+ letters), then press Enter. Words must be in the puzzle list."
+        self.word_bank_scroll = 0
+        self.word_bank_scroll_to_bottom = False
 
     def _remaining_ms_playing(self):
         elapsed = pygame.time.get_ticks() - self.start_ticks
@@ -323,8 +367,7 @@ class AnagramsGame:
         self.guessed_words.add(raw)
         self.score += pts
         self.found_words_display.append(raw)
-        if len(self.found_words_display) > 14:
-            self.found_words_display = self.found_words_display[-14:]
+        self.word_bank_scroll_to_bottom = True
         self.feedback = f'"{raw}" counted — keep going!'
         self.guess_buffer = ""
 
@@ -403,17 +446,46 @@ class AnagramsGame:
         scramble_surf = self.font_title.render(self.scramble, True, self.accent)
         self.screen.blit(scramble_surf, (w // 2 - scramble_surf.get_width() // 2, 208))
 
-        panel = pygame.Rect(80, 280, w - 160, 200)
+        panel = self._word_bank_panel_rect()
+        self.word_bank_panel_rect = panel
         pygame.draw.rect(self.screen, self.card_bg, panel, border_radius=12)
         pygame.draw.rect(self.screen, self.accent, panel, width=2, border_radius=12)
-        hist_title = self.font_game.render("Words you have scored this round (points tallied when time ends)", True, self.text_main)
+        hist_title = self.font_game.render(
+            "Words you scored (wraps across; wheel to scroll if list is long)", True, self.text_main
+        )
         self.screen.blit(hist_title, (panel.x + 16, panel.y + 10))
 
-        y = panel.y + 44
-        for word in reversed(self.found_words_display[-10:]):
-            line = self.font_small.render(word, True, self.card_color)
-            self.screen.blit(line, (panel.x + 20, y))
-            y += 20
+        inner = self._word_bank_inner_rect(panel)
+        scroll_gutter = 12
+        content = pygame.Rect(inner.x, inner.y, max(40, inner.width - scroll_gutter), inner.height)
+        rows, row_heights, total_h = self._layout_word_bank_rows(content.width)
+        max_scroll = max(0, total_h - content.height)
+        if self.word_bank_scroll_to_bottom:
+            self.word_bank_scroll = max_scroll
+            self.word_bank_scroll_to_bottom = False
+        else:
+            self.word_bank_scroll = max(0, min(self.word_bank_scroll, max_scroll))
+
+        gap_x = 8
+        prev_clip = self.screen.get_clip()
+        self.screen.set_clip(content)
+        y = content.y - self.word_bank_scroll
+        for row, rh in zip(rows, row_heights):
+            row_max_h = max(s.get_height() for s in row)
+            x = content.x
+            for surf in row:
+                self.screen.blit(surf, (x, y + row_max_h - surf.get_height()))
+                x += surf.get_width() + gap_x
+            y += rh
+        self.screen.set_clip(prev_clip)
+
+        if max_scroll > 0:
+            track = pygame.Rect(inner.right - 10, inner.y, 8, inner.height)
+            pygame.draw.rect(self.screen, (220, 215, 235), track, border_radius=4)
+            thumb_h = max(18, int(inner.height * inner.height / (total_h + 0.001)))
+            t_top = inner.y + int((self.word_bank_scroll / max_scroll) * (inner.height - thumb_h))
+            thumb = pygame.Rect(track.x, t_top, track.width, thumb_h)
+            pygame.draw.rect(self.screen, self.accent, thumb, border_radius=4)
 
         in_lbl = self.font_game.render("TYPE A WORD, THEN PRESS ENTER:", True, self.text_main)
         self.screen.blit(in_lbl, (w // 2 - in_lbl.get_width() // 2, 500))
@@ -424,7 +496,7 @@ class AnagramsGame:
         self.screen.blit(fb_surf, (w // 2 - fb_surf.get_width() // 2, 590))
 
         help_line = self.font_small.render(
-            "Enter: submit  |  Backspace: delete  |  Esc: quit  |  Total score after time’s up",
+            "Enter: submit  |  Backspace: delete  |  Wheel/PgUp/PgDn: scroll word bank  |  Esc: quit",
             True,
             self.card_color,
         )
@@ -522,11 +594,20 @@ class AnagramsGame:
                             self._return_to_hub()
 
                 elif self.game_state == "PLAYING":
+                    if event.type == pygame.MOUSEWHEEL:
+                        if self.word_bank_panel_rect.collidepoint(pygame.mouse.get_pos()):
+                            dy = float(getattr(event, "precise_y", event.y))
+                            self.word_bank_scroll -= dy * 32
+
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_RETURN:
                             self._submit_guess()
                         elif event.key == pygame.K_BACKSPACE:
                             self.guess_buffer = self.guess_buffer[:-1]
+                        elif event.key in (pygame.K_PAGEUP,):
+                            self.word_bank_scroll -= 80
+                        elif event.key in (pygame.K_PAGEDOWN,):
+                            self.word_bank_scroll += 80
                         elif hasattr(event, "unicode") and event.unicode and event.unicode.isalpha():
                             if len(self.guess_buffer) < MAX_TYPED_LENGTH:
                                 self.guess_buffer += event.unicode.upper()
