@@ -26,7 +26,7 @@ class App:
         self.screen = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.background = pygame.Surface(self.screen.get_size()).convert()
         self.background.fill((153, 204, 255))
-        pygame.display.set_caption("GamePython Hub!")
+        pygame.display.set_caption("GamePython Hub!") #sets the caption of the window to "GamePython Hub!"
 
         #adjusting font size and colors for different titles within the home hub
         self.title_font = pygame.font.SysFont("chalkboard", 52, bold=True)
@@ -143,7 +143,7 @@ class App:
     def draw(self):
         self.screen.blit(self.background, (0, 0))
 
-        title_surface = self.title_font.render("GamePython Hub", True, (20, 20, 60))
+        title_surface = self.title_font.render("Welcome to GamePython Hub!", True, (20, 20, 60))
         self.screen.blit(title_surface, (self.size[0] // 2 - title_surface.get_width() // 2, 80))
 
         #for tracking mouse coordinates so that the buttons can react to hovering
