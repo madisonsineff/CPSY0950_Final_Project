@@ -9,6 +9,14 @@ import pygame
 class App:
     def __init__(self):
         pygame.init()
+        self.base_dir = pathlib.Path(__file__).parent
+        # Background music: add hub_music.ogg or hub_music.mp3 next to this file (ogg is most reliable in pygame)
+        self._hub_music_path = self.base_dir / "hub_music.ogg"
+        if not self._hub_music_path.exists():
+            self._hub_music_path = self.base_dir / "hub_music.mp3"
+        self._running_game_processes = []
+        self._start_hub_music()
+
         #these lines are responsible for configuring the main window and background color/size of the home hub
         self.running = True
         self.size = (1200, 800)
@@ -26,19 +34,38 @@ class App:
         self.message_font = pygame.font.SysFont("optima", 24)
         self.message = "Choose any game to launch!"
 
-        #this enales the main folder of GamePython_MAINHUB.py to be accessed so that future scripts (like scripts specific to the games) can be accessed and built relative to the home hub
-        base_dir = pathlib.Path(__file__).parent
         # specific game scripts are located here as an access point from the home screen
         #make all updates to game scripts here 
         self.games = [
-            {"title": "Anagrams", "script": base_dir / "anagrams.py", "image": base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
-            {"title": "Four in a Row", "script": base_dir / "connect_4.py", "image": base_dir / "connect4background.jpg"},
-            {"title": "Cup Pong", "script": base_dir / "cup_pong.py", "image": base_dir / "cuppongbackground.webp"},
+            {"title": "Anagrams", "script": self.base_dir / "anagrams.py", "image": self.base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
+            {"title": "Four in a Row", "script": self.base_dir / "connect_4.py", "image": self.base_dir / "connect4background.jpg"},
+            {"title": "Cup Pong", "script": self.base_dir / "cup_pong.py", "image": self.base_dir / "cuppongbackground.webp"},
         ]
 
         #makes the buttons for game scripts into a clickable rectangle 
         self.buttons = self.build_buttons()
         self.load_button_images()
+
+    def _start_hub_music(self):
+        if not self._hub_music_path.exists():
+            return
+        try:
+            pygame.mixer.init()
+            pygame.mixer.music.load(str(self._hub_music_path))
+            pygame.mixer.music.set_volume(0.35)
+            pygame.mixer.music.play(-1)
+        except pygame.error:
+            pass
+
+    def _poll_running_games(self):
+        """When every launched game process has exited, resume hub music."""
+        before = len(self._running_game_processes)
+        self._running_game_processes = [p for p in self._running_game_processes if p.poll() is None]
+        if before and not self._running_game_processes:
+            try:
+                pygame.mixer.music.unpause()
+            except pygame.error:
+                pass
 
     def load_button_images(self):
         for button in self.buttons:
@@ -105,7 +132,12 @@ class App:
             return
 
         # Launch using the same Python interpreter as this hub and lets user know that the game script has been launched
-        subprocess.Popen([sys.executable, str(script_path)])
+        proc = subprocess.Popen([sys.executable, str(script_path)])
+        self._running_game_processes.append(proc)
+        try:
+            pygame.mixer.music.pause()
+        except pygame.error:
+            pass
         self.message = f"Launched {script_path.name}"
 
     def draw(self):
@@ -156,6 +188,7 @@ class App:
     #keeping the hub running and quits the window when the x button is pressed
     def run(self):
         while self.running:
+            self._poll_running_games()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
