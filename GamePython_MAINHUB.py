@@ -32,7 +32,7 @@ class App:
         #make all updates to game scripts here 
         self.games = [
             {"title": "Anagrams", "script": base_dir / "anagrams.py", "image": base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
-            {"title": "Four in a Row", "script": base_dir / "mini_golf.py", "image": base_dir / "connect4background.jpg"},
+            {"title": "Four in a Row", "script": base_dir / "connect_4.py", "image": base_dir / "connect4background.jpg"},
             {"title": "Cup Pong", "script": base_dir / "cup_pong.py", "image": base_dir / "cuppongbackground.webp"},
         ]
 
