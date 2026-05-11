@@ -39,7 +39,7 @@ class App:
         self.games = [
             {"title": "Anagrams", "script": self.base_dir / "anagrams.py", "image": self.base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
             {"title": "Four in a Row", "script": self.base_dir / "connect_4.py", "image": self.base_dir / "connect4background.jpg"},
-            {"title": "Cup Pong", "script": self.base_dir / "cup_pong.py", "image": self.base_dir / "cuppongbackground.webp"},
+            {"title": "Cup Pong", "script": self.base_dir / "cuppong.py", "image": self.base_dir / "cuppongbackground.webp"},
         ]
 
         #makes the buttons for game scripts into a clickable rectangle 
