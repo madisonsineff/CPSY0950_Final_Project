@@ -13,13 +13,17 @@ import pygame
 
 
 INITIAL_CUPS_PER_SIDE = 10
+MAX_CUPS_PER_PLAYER = 20
 ATTEMPTS_PER_ROUND = 2
-GRAVITY = 0.42
+GRAVITY = 0.35
 BALL_RADIUS = 9
 MAX_SPEED = 17.0
-AIM_PULL_SCALE = 0.16
 LAUNCH_GRAB_RADIUS = 72
 MIN_DRAG_TO_FIRE = 14
+SWIPE_LOOKBACK_MS = 220
+FRAME_MS = 1000.0 / 60.0
+SWIPE_POWER_SCALE = 1.25
+MIN_THROW_SPEED = 6.0
 
 
 def triangle_row_counts(total: int) -> List[int]:
@@ -42,23 +46,41 @@ def rack_positions(
     row_dy: float,
     col_dx: float,
 ) -> List[Tuple[float, float]]:
-    """Cup centers: row 1 at apex, each row below has one more slot (triangle), then extras."""
+    """Cup centers for a 10-cup triangle; extra cups grow outward from side edges."""
     if n <= 0:
         return []
-    rows = triangle_row_counts(n)
+
+    # Base GamePigeon-style 10-cup rack.
+    base_rows = [1, 2, 3, 4]
     out: List[Tuple[float, float]] = []
-    y = apex_y
     idx = 0
-    for r, count in enumerate(rows):
+    y = apex_y
+    for count in base_rows:
         row_w = (count - 1) * col_dx
         for j in range(count):
             if idx >= n:
-                break
+                return out
             x = apex_x - row_w / 2 + j * col_dx
             out.append((x, y))
             idx += 1
         y += row_dy
-    return out[:n]
+
+    # Any penalty cups after the first 10 grow from the triangle sides horizontally.
+    base_y = apex_y + (len(base_rows) - 1) * row_dy
+    left_edge_x = apex_x - 1.5 * col_dx
+    right_edge_x = apex_x + 1.5 * col_dx
+    extra_idx = 0
+    while idx < n:
+        step = extra_idx // 2 + 1
+        if extra_idx % 2 == 0:
+            x = left_edge_x - step * col_dx
+        else:
+            x = right_edge_x + step * col_dx
+        out.append((x, base_y))
+        idx += 1
+        extra_idx += 1
+
+    return out
 
 
 @dataclass
@@ -119,8 +141,16 @@ class CupPongGame:
 
         if self.winner is None and self.attempts_left <= 0:
             if self.hits_this_turn >= ATTEMPTS_PER_ROUND:
-                self._add_penalty_cup_to_defender()
-                extra += " Both throws in — opponent gains a cup!"
+                shooter = self.current_player
+                receiver = self._add_penalty_cup_to_shooter_stack()
+                if receiver is not None:
+                    extra += (
+                        f" Player {shooter} went 2/2 — penalty cup added to Player {receiver}'s stack."
+                    )
+                else:
+                    extra += (
+                        f" Player {shooter} went 2/2 — no penalty cup added (max {MAX_CUPS_PER_PLAYER} reached)."
+                    )
             self.hits_this_turn = 0
             self.attempts_left = ATTEMPTS_PER_ROUND
             self._switch_player()
@@ -128,11 +158,14 @@ class CupPongGame:
 
         return ShotResult(True, msg + extra, hit=hit, target_cup=cup_index_if_hit if hit else None)
 
-    def _add_penalty_cup_to_defender(self) -> None:
-        """Shooter sank every attempt this turn; defender (other player) gets one cup back."""
-        defender = 2 if self.current_player == 1 else 1
-        rack = self._cups_for_player(defender)
+    def _add_penalty_cup_to_shooter_stack(self) -> Optional[int]:
+        """Shooter sank every attempt this turn; add one cup to shooter's stack if under cap."""
+        shooter = self.current_player
+        rack = self._cups_for_player(shooter)
+        if len(rack) >= MAX_CUPS_PER_PLAYER:
+            return None
         rack.append(True)
+        return shooter
 
     def remaining_cups(self, player: int) -> int:
         cups = self._cups_for_player(player)
@@ -226,12 +259,15 @@ def run_pygame_gui() -> None:
     row_dy = 46
     col_dx = 48
 
-    # Adjacent triangles (apex toward top); P2 rack left, P1 rack right.
-    apex_p2 = pygame.Vector2(320, 118)
-    apex_p1 = pygame.Vector2(size[0] - 320, 118)
+    # Adjacent setup: both racks near top, both players shoot upward from bottom.
+    left_x = size[0] * 0.30
+    right_x = size[0] * 0.70
+    apex_p2 = pygame.Vector2(left_x, 108)
+    apex_p1 = pygame.Vector2(right_x, 108)
 
-    launcher_p1 = pygame.Vector2(apex_p1.x, size[1] - 88)
-    launcher_p2 = pygame.Vector2(apex_p2.x, 88)
+    # Both launchers are below their target lanes.
+    launcher_p1 = pygame.Vector2(left_x, size[1] - 78)
+    launcher_p2 = pygame.Vector2(right_x, size[1] - 78)
 
     def positions_p1() -> List[Tuple[float, float]]:
         return rack_positions(len(game.player_one_cups), apex_p1.x, apex_p1.y, row_dy, col_dx)
@@ -248,10 +284,11 @@ def run_pygame_gui() -> None:
 
     phase = "IDLE"
     aim_start: Optional[Tuple[int, int]] = None
+    aim_trace: List[Tuple[int, Tuple[int, int]]] = []
     ball_pos = pygame.Vector2()
     ball_vel = pygame.Vector2()
     flight_ticks = 0
-    status = "Player 1 shoots at the LEFT triangle (Player 2's cups)."
+    status = "Player 1 shoots up the LEFT lane toward the left rack."
     running = True
 
     while running:
@@ -269,32 +306,50 @@ def run_pygame_gui() -> None:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if dist_to_launcher(event.pos) <= LAUNCH_GRAB_RADIUS:
                         aim_start = event.pos
+                        now = pygame.time.get_ticks()
+                        aim_trace = [(now, event.pos)]
                         phase = "AIMING"
             elif game.winner is None and phase == "AIMING":
+                if event.type == pygame.MOUSEMOTION and aim_start is not None:
+                    now = pygame.time.get_ticks()
+                    aim_trace.append((now, event.pos))
+                    cutoff = now - SWIPE_LOOKBACK_MS
+                    aim_trace = [(t, p) for t, p in aim_trace if t >= cutoff]
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and aim_start is not None:
+                    now = pygame.time.get_ticks()
+                    aim_trace.append((now, event.pos))
+                    cutoff = now - SWIPE_LOOKBACK_MS
+                    aim_trace = [(t, p) for t, p in aim_trace if t >= cutoff]
                     mx, my = event.pos
                     sx, sy = aim_start
-                    drag = math.hypot(mx - sx, my - sy)
-                    if drag < MIN_DRAG_TO_FIRE:
+                    lv = launcher()
+                    aim_dx = mx - lv.x
+                    aim_dy = my - lv.y
+                    aim_len = math.hypot(aim_dx, aim_dy)
+                    if aim_len < MIN_DRAG_TO_FIRE:
                         phase = "IDLE"
                         aim_start = None
+                        aim_trace = []
                         status = "Drag farther from the dot to throw."
                     else:
-                        lv = launcher()
-                        vx = (mx - lv.x) * AIM_PULL_SCALE
-                        vy = (my - lv.y) * AIM_PULL_SCALE
-                        spd = math.hypot(vx, vy)
-                        if spd > MAX_SPEED:
-                            vx *= MAX_SPEED / spd
-                            vy *= MAX_SPEED / spd
-                        if spd < 3.0:
-                            vx *= 3.0 / max(spd, 0.001)
-                            vy *= 3.0 / max(spd, 0.001)
+                        start_t, (sx2, sy2) = aim_trace[0] if aim_trace else (now - 1, (sx, sy))
+                        end_t, (ex2, ey2) = aim_trace[-1] if aim_trace else (now, (mx, my))
+                        dt_ms = max(1, end_t - start_t)
+                        swipe_dx = ex2 - sx2
+                        swipe_dy = ey2 - sy2
+                        swipe_speed = math.hypot(swipe_dx, swipe_dy) / dt_ms
+                        throw_speed = max(
+                            MIN_THROW_SPEED,
+                            min(MAX_SPEED, swipe_speed * FRAME_MS * SWIPE_POWER_SCALE),
+                        )
+                        vx = (aim_dx / aim_len) * throw_speed
+                        vy = (aim_dy / aim_len) * throw_speed
                         ball_pos.update(lv.x, lv.y)
                         ball_vel.update(vx, vy)
                         phase = "BALL"
                         flight_ticks = 0
                     aim_start = None
+                    aim_trace = []
 
         if phase == "BALL" and game.winner is None:
             ball_vel.y += GRAVITY
@@ -337,7 +392,7 @@ def run_pygame_gui() -> None:
                     ball_pos.x = max(BALL_RADIUS + 17, min(size[0] - BALL_RADIUS - 17, ball_pos.x))
 
         screen.fill(bg)
-        pygame.draw.rect(screen, table, (28, 200, size[0] - 56, 300), border_radius=16)
+        pygame.draw.rect(screen, table, (28, 72, size[0] - 56, 560), border_radius=16)
 
         def draw_rack(cups: List[bool], pts: List[Tuple[float, float]], up_color: Tuple[int, int, int]) -> None:
             for i, (x, y) in enumerate(pts):
@@ -361,18 +416,14 @@ def run_pygame_gui() -> None:
             pygame.draw.circle(screen, highlight, (int(cur.x), int(cur.y)), 14, width=3)
             if game.current_player == 1:
                 turn_txt = (
-                    f"PLAYER 1 — shoot the LEFT rack  |  Throws left: {game.attempts_left}"
+                    f"PLAYER 1 — shoot LEFT rack  |  Throws left: {game.attempts_left}"
                 )
             else:
                 turn_txt = (
-                    f"PLAYER 2 — shoot the RIGHT rack  |  Throws left: {game.attempts_left}"
+                    f"PLAYER 2 — shoot RIGHT rack  |  Throws left: {game.attempts_left}"
                 )
             tw = font_lg.render(turn_txt, True, ring)
             screen.blit(tw, (size[0] // 2 - tw.get_width() // 2, 14))
-
-            if phase == "AIMING" and aim_start is not None:
-                mx, my = pygame.mouse.get_pos()
-                pygame.draw.line(screen, (200, 200, 255), (int(cur.x), int(cur.y)), (mx, my), 2)
 
             if phase == "BALL":
                 pygame.draw.circle(screen, ball_c, (int(ball_pos.x), int(ball_pos.y)), BALL_RADIUS)
@@ -384,19 +435,14 @@ def run_pygame_gui() -> None:
             screen.blit(w, (size[0] // 2 - w.get_width() // 2, 14))
 
         screen.blit(
-            font_md.render("Player 2 cups — LEFT triangle", True, text_c),
-            (int(apex_p2.x) - 110, int(apex_p2.y) - 36),
+            font_md.render("Player 1 cups (left rack)", True, text_c),
+            (int(apex_p2.x) - 90, int(apex_p2.y) - 44),
         )
         screen.blit(
-            font_md.render("Player 1 cups — RIGHT triangle", True, text_c),
-            (int(apex_p1.x) - 120, int(apex_p1.y) - 36),
+            font_md.render("Player 2 cups (right rack)", True, text_c),
+            (int(apex_p1.x) - 94, int(apex_p1.y) - 44),
         )
 
-        inst = (
-            "Drag from your yellow-highlighted launcher. Clear the other player's cups to win. "
-            f"If both throws in one turn land in cups, they get an extra cup back. {ATTEMPTS_PER_ROUND} throws per turn."
-        )
-        screen.blit(font_sm.render(inst, True, (180, 185, 200)), (18, size[1] - 86))
         bar = font_sm.render(status[:100], True, text_c)
         screen.blit(bar, (size[0] // 2 - bar.get_width() // 2, size[1] - 56))
         screen.blit(
