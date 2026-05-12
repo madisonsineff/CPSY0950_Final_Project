@@ -18,21 +18,20 @@ ATTEMPTS_PER_ROUND = 2
 # Side-view world: wh = height above table (up), wd = depth toward cups, wx = lateral.
 GRAVITY_WORLD = 0.44
 BALL_RADIUS = 9
-MAX_THROW_POWER = 26.0
-MIN_THROW_POWER = 7.5
-DRAG_POWER_PER_PX = 0.11
-LAUNCH_GRAB_RADIUS = 88
-MIN_DRAG_TO_FIRE = 12
+LAUNCH_GRAB_RADIUS = 92
+# Slingshot: pull away from the ball anchor; stretch maps to depth / row band.
+MAX_SLING_PULL = 210.0
+MIN_SLING_PULL = 20.0
 TABLE_DEPTH = 520.0
 CUP_PLANE_WD = 480.0
 # Along-table spacing between pyramid rows (apex = deepest wd; front row toward player).
 PYRAMID_ROW_WD = 52.0
 
 # Realistic sink: ball must pass through cup mouth while falling; rim grazes don't score.
-CUP_OPENING_HALF_FRAC = 0.34
+CUP_OPENING_HALF_FRAC = 0.30
 # Lip plane in world height (above table); ball must descend through opening in wx.
 CUP_LIP_WH_FRAC = 0.82
-CUP_SINK_CENTER_FRAC = 0.88
+CUP_SINK_CENTER_FRAC = 0.92
 CUP_SETTLE_SPEED = 2.8
 
 
@@ -300,6 +299,22 @@ def world_to_screen_lane(wd: float, wx: float, wh: float, lane: int, sw: int, sh
     sx = table_cx + wx * lateral_scale
     sy = table_y - wh * 1.22
     return sx, sy
+
+
+def slingshot_speed_for_stretch_norm(t: float) -> float:
+    """Normalized pull length 0..1 -> launch speed (world). Tiers: short / rows 4..1 / long."""
+    t = max(0.0, min(1.0, t))
+    if t < 0.065:
+        return 4.8 + t * 28.0
+    if t < 0.26:
+        return 6.6 + (t - 0.065) * 26.0
+    if t < 0.44:
+        return 11.67 + (t - 0.26) * 27.0
+    if t < 0.60:
+        return 16.53 + (t - 0.44) * 26.5
+    if t < 0.78:
+        return 20.77 + (t - 0.60) * 24.0
+    return 25.09 + (t - 0.78) * 45.0
 
 
 def draw_cup_side_profile(
@@ -624,7 +639,6 @@ def run_pygame_gui() -> None:
             draw_cup_side_profile(screen, sx, sy, sc, fill, rim_c, standing)
 
     phase = "IDLE"
-    aim_start: Optional[Tuple[int, int]] = None
     sunk_anim_ticks = 0
     sunk_ball: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     sunk_lane = 1
@@ -636,7 +650,7 @@ def run_pygame_gui() -> None:
     ball_vwx = 0.0
     ball_vh = 0.0
     flight_ticks = 0
-    status = "Player 1 — left table: shoot from your dot, aim at the pink cups."
+    status = "Player 1 — slingshot: pull back from your ball, release to fire (left lane → pink)."
     sink_qualified: List[bool] = []
     running = True
 
@@ -652,44 +666,53 @@ def run_pygame_gui() -> None:
                     phase = "IDLE"
                     sunk_anim_ticks = 0
                     sunk_lane = 1
-                    status = "New game — Player 1's turn (left lane → pink cups)."
+                    status = "New game — P1: slingshot on the left lane (pink cups)."
                     lw, lwx, lwh = launch_world(1)
                     ball_wd, ball_wx, ball_wh = lw, lwx, lwh
             elif game.winner is None and phase == "IDLE":
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if dist_to_active_launcher(event.pos) <= LAUNCH_GRAB_RADIUS:
-                        aim_start = event.pos
-                        phase = "AIMING"
-            elif game.winner is None and phase == "AIMING":
-                if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and aim_start is not None:
-                    mx, my = event.pos
-                    lsx, lsy = active_launcher_screen()
-                    du, dv = mx - lsx, my - lsy
-                    drag_len = math.hypot(du, dv)
-                    if drag_len < MIN_DRAG_TO_FIRE:
+                        phase = "SLING"
+            elif game.winner is None and phase == "SLING":
+                if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    asx, asy = active_launcher_screen()
+                    mx, my = float(event.pos[0]), float(event.pos[1])
+                    dx, dy = mx - asx, my - asy
+                    stretch = math.hypot(dx, dy)
+                    if stretch < MIN_SLING_PULL:
                         phase = "IDLE"
-                        aim_start = None
-                        status = "Drag farther from your dot to throw."
+                        status = "Pull back farther from the ball to shoot."
                     else:
-                        power = max(
-                            MIN_THROW_POWER,
-                            min(MAX_THROW_POWER, drag_len * DRAG_POWER_PER_PX),
-                        )
-                        ux, uy = du / drag_len, dv / drag_len
+                        cap = min(stretch, MAX_SLING_PULL)
+                        pfx = -dx / stretch
+                        pfy = -dy / stretch
+                        flen = math.hypot(pfx, pfy) or 1.0
+                        pfx /= flen
+                        pfy /= flen
+                        t = cap / MAX_SLING_PULL
+                        sp = slingshot_speed_for_stretch_norm(t)
+                        Dwd = max(0.1, -pfy)
+                        Dwx = pfx * 0.98
+                        Dwh = -abs(pfy) * 0.68 - 0.26
+                        m3 = math.hypot(Dwd, Dwx, Dwh)
+                        if m3 < 1e-6:
+                            Dwd, Dwx, Dwh = 1.0, 0.0, -0.45
+                            m3 = math.hypot(Dwd, Dwx, Dwh)
+                        Dwd /= m3
+                        Dwx /= m3
+                        Dwh /= m3
                         cp = game.current_player
                         lw, lwx, lwh = launch_world(cp)
-                        opp_cx = RACK_CENTER_WX
-                        tow_wx = opp_cx - lwx
-                        screen_fwd = ux if cp == 1 else -ux
-                        ball_vd = power * (0.86 + 0.22 * max(0.0, screen_fwd) + 0.12 * max(0.0, -uy))
-                        ball_vwx = tow_wx * (power / 188.0) + ux * power * 0.31
-                        # Arc: always loft toward apex, extra when dragging upward on screen.
-                        ball_vh = -power * (0.48 + max(0.0, -uy) * 1.02)
                         ball_wd, ball_wx, ball_wh = lw, lwx, lwh
+                        ball_vd = Dwd * sp
+                        ball_vwx = Dwx * sp
+                        ball_vh = Dwh * sp
                         phase = "BALL"
                         flight_ticks = 0
                         sink_qualified = []
-                    aim_start = None
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                    phase = "IDLE"
+                    status = "Slingshot cancelled."
 
         if phase == "SUNK":
             sunk_anim_ticks -= 1
@@ -729,7 +752,7 @@ def run_pygame_gui() -> None:
             elif len(sink_qualified) > n_opp:
                 del sink_qualified[n_opp:]
 
-            opening_r = cup_r * CUP_OPENING_HALF_FRAC * 1.22
+            opening_r = cup_r * CUP_OPENING_HALF_FRAC * 1.0
             sink_max_d = cup_r - BALL_RADIUS * CUP_SINK_CENTER_FRAC
             wh_lip = cup_r * CUP_LIP_WH_FRAC
             speed = math.hypot(ball_vd, ball_vwx, ball_vh)
@@ -848,7 +871,7 @@ def run_pygame_gui() -> None:
         if game.winner is None:
             alx, aly = active_launcher_screen()
             pygame.draw.circle(screen, highlight, (int(alx), int(aly)), 15, width=3)
-            aim_hint = "LEFT lane (pink)" if game.current_player == 1 else "RIGHT lane (blue)"
+            aim_hint = "LEFT lane (pink) — slingshot" if game.current_player == 1 else "RIGHT lane (blue) — slingshot"
             turn_txt = f"PLAYER {game.current_player} — aim {aim_hint}  |  Throws: {game.attempts_left}"
             tw = font_lg.render(turn_txt, True, ring)
             screen.blit(tw, (size[0] // 2 - tw.get_width() // 2, 12))
@@ -857,6 +880,21 @@ def run_pygame_gui() -> None:
                 f"PLAYER {game.winner} WINS!  (cleared opponent's rack)  R = new game", True, ring
             )
             screen.blit(w, (size[0] // 2 - w.get_width() // 2, 12))
+
+        if game.winner is None and phase == "SLING":
+            asx, asy = active_launcher_screen()
+            mx, my = pygame.mouse.get_pos()
+            dx, dy = float(mx - asx), float(my - asy)
+            plen = math.hypot(dx, dy)
+            if plen > 0.5:
+                cap_len = min(plen, MAX_SLING_PULL)
+                bx = asx + dx / plen * cap_len
+                by = asy + dy / plen * cap_len
+            else:
+                bx, by = asx, asy
+            pygame.draw.line(screen, (175, 205, 130), (int(asx), int(asy)), (int(bx), int(by)), 3)
+            pygame.draw.circle(screen, ball_c, (int(bx), int(by)), max(6, BALL_RADIUS - 1))
+            pygame.draw.circle(screen, (45, 40, 35), (int(bx), int(by)), max(6, BALL_RADIUS - 1), 2)
 
         if phase == "BALL":
             bl = shooter_lane(game.current_player)
@@ -871,7 +909,7 @@ def run_pygame_gui() -> None:
 
         screen.blit(
             font_md.render(
-                "Two tables: left lane = P1 (shoot pink)  |  right lane = P2 (shoot blue)",
+                "Slingshot: click your ball, pull back (more stretch = more depth), release — right-click cancels",
                 True,
                 text_c,
             ),
@@ -879,7 +917,7 @@ def run_pygame_gui() -> None:
         )
         screen.blit(
             font_md.render(
-                "Each lane has its own felt, centerline, and ball dot at the near end",
+                "Power bands: tiny pull = short; then rows 4→3→2→1; max pull = past cups. Rim-only = miss.",
                 True,
                 text_c,
             ),
@@ -889,7 +927,7 @@ def run_pygame_gui() -> None:
         bar = font_sm.render(status[:108], True, text_c)
         screen.blit(bar, (size[0] // 2 - bar.get_width() // 2, size[1] - 56))
         screen.blit(
-            font_sm.render("Esc quit  |  R after win", True, (130, 135, 150)),
+            font_sm.render("Esc quit  |  R after win  |  right-click cancels slingshot", True, (130, 135, 150)),
             (size[0] // 2 - 110, size[1] - 28),
         )
 
