@@ -60,8 +60,32 @@ def _resolve_cup_rim_squeeze(
     sink_qualified: List[bool],
     sink_max_d: float,
 ) -> None:
-    """Push the ball out of overlapping cup rims; combined separation avoids ping-pong between cups."""
+    #Push the ball out of overlapping cup rims; combined separation avoids ping-pong between cups.
+
+    #While the ball is moving upward (vy < 0), we skip rim resolution unless it is wedged
+    #between two or more cups — otherwise the push-away from the bottom row blocks shots
+    #from ever reaching the back rows.
+   
     margin = cup_r + BALL_RADIUS + 1.4
+
+    def rim_touch_count() -> int:
+        t = 0
+        for i, (cxi, cyi) in enumerate(opp_pts):
+            if i >= len(opp) or not opp[i]:
+                continue
+            d = math.hypot(ball_pos.x - cxi, ball_pos.y - cyi)
+            if d >= margin - 0.02:
+                continue
+            qualified = i < len(sink_qualified) and sink_qualified[i]
+            if qualified and d <= sink_max_d:
+                continue
+            t += 1
+        return t
+
+    tc = rim_touch_count()
+    if ball_vel.y < -0.22 and tc < 2:
+        return
+
     for _ in range(10):
         sep_x = 0.0
         sep_y = 0.0
