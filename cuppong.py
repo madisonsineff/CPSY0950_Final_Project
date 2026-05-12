@@ -16,7 +16,7 @@ INITIAL_CUPS_PER_SIDE = 10
 MAX_CUPS_PER_PLAYER = 20
 ATTEMPTS_PER_ROUND = 2
 # Side-view world: wh = height above table (up), wd = depth toward cups, wx = lateral.
-GRAVITY_WORLD = 0.38
+GRAVITY_WORLD = 0.44
 BALL_RADIUS = 9
 MAX_THROW_POWER = 26.0
 MIN_THROW_POWER = 7.5
@@ -25,6 +25,8 @@ LAUNCH_GRAB_RADIUS = 88
 MIN_DRAG_TO_FIRE = 12
 TABLE_DEPTH = 520.0
 CUP_PLANE_WD = 480.0
+# Along-table spacing between pyramid rows (apex = deepest wd; front row toward player).
+PYRAMID_ROW_WD = 52.0
 
 # Realistic sink: ball must pass through cup mouth while falling; rim grazes don't score.
 CUP_OPENING_HALF_FRAC = 0.34
@@ -32,6 +34,26 @@ CUP_OPENING_HALF_FRAC = 0.34
 CUP_LIP_WH_FRAC = 0.82
 CUP_SINK_CENTER_FRAC = 0.88
 CUP_SETTLE_SPEED = 2.8
+
+
+def _lip_cross_table_point(
+    prev_wx: float,
+    prev_wh: float,
+    prev_wd: float,
+    wx: float,
+    wh: float,
+    wd: float,
+    wh_lip: float,
+) -> Optional[Tuple[float, float]]:
+    """At lip height crossing while falling, return (wx, wd) on the segment."""
+    if wh >= prev_wh or abs(wh - prev_wh) < 1e-9:
+        return None
+    if prev_wh <= wh_lip or wh > wh_lip:
+        return None
+    t = (wh_lip - prev_wh) / (wh - prev_wh)
+    if not (0.0 <= t <= 1.0):
+        return None
+    return prev_wx + t * (wx - prev_wx), prev_wd + t * (wd - prev_wd)
 
 
 def _lip_cross_wx_at_height(
@@ -59,12 +81,11 @@ def _resolve_cup_rim_squeeze_world(
     ball_vd: float,
     ball_vwx: float,
     ball_vh: float,
-    opp_wx: List[float],
+    opp_pts: List[Tuple[float, float]],
     opp: List[bool],
     cup_r: float,
     sink_qualified: List[bool],
     sink_max_d: float,
-    cup_plane_wd: float,
     interact_h: float,
 ) -> Tuple[float, float, float, float, float, float]:
     """Returns updated (wd, wx, wh, vd, vwx, vh). Planar squeeze in (wd, wx) near table height."""
@@ -74,10 +95,10 @@ def _resolve_cup_rim_squeeze_world(
         t = 0
         if ball_wh > interact_h:
             return 0
-        for i, wxi in enumerate(opp_wx):
+        for i, (wxi, wdi) in enumerate(opp_pts):
             if i >= len(opp) or not opp[i]:
                 continue
-            d = math.hypot(ball_wd - cup_plane_wd, ball_wx - wxi)
+            d = math.hypot(ball_wd - wdi, ball_wx - wxi)
             if d >= margin - 0.02:
                 continue
             qualified = i < len(sink_qualified) and sink_qualified[i]
@@ -96,10 +117,10 @@ def _resolve_cup_rim_squeeze_world(
         touch = 0
         if ball_wh > interact_h:
             break
-        for i, wxi in enumerate(opp_wx):
+        for i, (wxi, wdi) in enumerate(opp_pts):
             if i >= len(opp) or not opp[i]:
                 continue
-            d = math.hypot(ball_wd - cup_plane_wd, ball_wx - wxi)
+            d = math.hypot(ball_wd - wdi, ball_wx - wxi)
             if d >= margin - 0.02:
                 continue
             qualified = i < len(sink_qualified) and sink_qualified[i]
@@ -107,7 +128,7 @@ def _resolve_cup_rim_squeeze_world(
                 continue
             if d < 1e-4:
                 d = 1e-4
-            nx = (ball_wd - cup_plane_wd) / d
+            nx = (ball_wd - wdi) / d
             nwx = (ball_wx - wxi) / d
             pen = margin - d
             sep_wd += nx * pen
@@ -192,43 +213,155 @@ def rack_positions(
     return out
 
 
-def rack_world_wx(n: int, center_wx: float, col_dx: float) -> List[float]:
-    """Lateral world positions (wx) for cups on the far plane; same triangle + extras as rack_positions."""
+def rack_world_placements(
+    n: int, center_wx: float, col_dx: float, apex_wd: float
+) -> List[Tuple[float, float]]:
+    """(wx, wd) per cup: 4-row pyramid with apex farthest up-table (largest wd), front row nearest you."""
     if n <= 0:
         return []
     base_rows = [1, 2, 3, 4]
-    out: List[float] = []
+    out: List[Tuple[float, float]] = []
     idx = 0
-    for count in base_rows:
+    for r, count in enumerate(base_rows):
+        wd_row = apex_wd - r * PYRAMID_ROW_WD
         row_w = (count - 1) * col_dx
         for j in range(count):
             if idx >= n:
                 return out
-            out.append(center_wx - row_w / 2 + j * col_dx)
+            wx = center_wx - row_w / 2 + j * col_dx
+            out.append((wx, wd_row))
             idx += 1
     left_edge_x = center_wx - 1.5 * col_dx
     right_edge_x = center_wx + 1.5 * col_dx
+    base_wd = apex_wd - 3 * PYRAMID_ROW_WD
     extra_idx = 0
     while idx < n:
         step = extra_idx // 2 + 1
         if extra_idx % 2 == 0:
-            out.append(left_edge_x - step * col_dx)
+            wx = left_edge_x - step * col_dx
         else:
-            out.append(right_edge_x + step * col_dx)
+            wx = right_edge_x + step * col_dx
+        out.append((wx, base_wd))
         idx += 1
         extra_idx += 1
     return out
 
 
 def world_to_screen(wd: float, wx: float, wh: float, sw: int, sh: int) -> Tuple[float, float]:
-    """Map table-world coords to screen (side / perspective toward far cups)."""
-    t = max(0.0, min(1.2, wd / TABLE_DEPTH))
-    near_y = float(sh) - 100.0
-    far_y = 130.0 + (1.0 - t) * 50.0
-    table_y = near_y - t * (near_y - far_y) * 0.88
-    sx = 105.0 + t * (float(sw) - 210.0) + wx * (1.05 - 0.42 * t)
-    sy = table_y - wh * 1.12 - t * 38.0
+    """Map table-world coords; wh=0 sits on the felt (matches trapezoid near/far edges)."""
+    t_depth = max(0.0, min(1.2, wd / TABLE_DEPTH))
+    near_l, near_r = 70.0, float(sw) - 70.0
+    far_l, far_r = 260.0, float(sw) - 260.0
+    near_cx = 0.5 * (near_l + near_r)
+    far_cx = 0.5 * (far_l + far_r)
+    table_cx = near_cx + t_depth * (far_cx - near_cx)
+
+    near_y = float(sh) - 52.0
+    far_y = 192.0
+    u_surface = max(0.0, min(1.0, wd / max(40.0, CUP_PLANE_WD)))
+    table_y = near_y + u_surface * (far_y - near_y)
+
+    lateral_scale = 1.05 - 0.42 * min(t_depth, 1.0)
+    sx = table_cx + wx * lateral_scale
+    sy = table_y - wh * 1.22
     return sx, sy
+
+
+def lane_trapezoid_bounds(sw: int, sh: int, lane: int) -> Tuple[float, float, float, float, float, float]:
+    """Left lane = 1, right lane = 2. Returns near_l, near_r, far_l, far_r, near_y, far_y."""
+    gap = 22.0
+    mid = float(sw) * 0.5
+    margin = 24.0
+    near_y = float(sh) - 52.0
+    far_y = 192.0
+    if lane == 1:
+        near_l = margin
+        near_r = mid - gap * 0.5
+    else:
+        near_l = mid + gap * 0.5
+        near_r = float(sw) - margin
+    width = near_r - near_l
+    ins = width * 0.22
+    far_l = near_l + ins
+    far_r = near_r - ins
+    return near_l, near_r, far_l, far_r, near_y, far_y
+
+
+def world_to_screen_lane(wd: float, wx: float, wh: float, lane: int, sw: int, sh: int) -> Tuple[float, float]:
+    """Same world model as world_to_screen, but mapped onto a narrow side-by-side lane (GamePigeon-style)."""
+    near_l, near_r, far_l, far_r, near_y, far_y = lane_trapezoid_bounds(sw, sh, lane)
+    t_depth = max(0.0, min(1.2, wd / TABLE_DEPTH))
+    near_cx = 0.5 * (near_l + near_r)
+    far_cx = 0.5 * (far_l + far_r)
+    table_cx = near_cx + t_depth * (far_cx - near_cx)
+    u_surface = max(0.0, min(1.0, wd / max(40.0, CUP_PLANE_WD)))
+    table_y = near_y + u_surface * (far_y - near_y)
+    lateral_scale = 1.02 - 0.40 * min(t_depth, 1.0)
+    sx = table_cx + wx * lateral_scale
+    sy = table_y - wh * 1.22
+    return sx, sy
+
+
+def draw_cup_side_profile(
+    surf: pygame.Surface,
+    base_x: float,
+    base_y: float,
+    scale: float,
+    fill: Tuple[int, int, int],
+    edge: Tuple[int, int, int],
+    is_up: bool,
+) -> None:
+    """Side-on plastic cup: rim wider than base, opening ellipse, slight 3/4 shading."""
+    bx, by = int(round(base_x)), int(round(base_y))
+    wb = max(10, int(11 * scale))
+    wt = max(16, int(20 * scale))
+    h = max(28, int(40 * scale))
+    rim_h = max(4, int(6 * scale))
+
+    rim_y = by - h
+
+    if not is_up:
+        rw, rh = int(wt * 0.85), max(6, int(8 * scale))
+        pygame.draw.ellipse(surf, fill, (bx - rw // 2, by - rh - 2, rw, rh))
+        pygame.draw.ellipse(surf, edge, (bx - rw // 2, by - rh - 2, rw, rh), 1)
+        return
+
+    shad = (28, 32, 38)
+    pygame.draw.ellipse(surf, shad, (bx - wb // 2 - 2, by - 3, wb + 4, 8))
+
+    body = [
+        (bx - wb // 2, by),
+        (bx + wb // 2, by),
+        (bx + wt // 2, rim_y),
+        (bx - wt // 2, rim_y),
+    ]
+    pygame.draw.polygon(surf, fill, body)
+    pygame.draw.polygon(surf, edge, body, 2)
+
+    rim_light = tuple(min(255, int(c + 40)) for c in fill)
+    pygame.draw.ellipse(
+        surf,
+        rim_light,
+        (bx - wt // 2 - 1, rim_y - rim_h + 1, wt + 2, rim_h + 3),
+    )
+    pygame.draw.ellipse(
+        surf,
+        edge,
+        (bx - wt // 2 - 1, rim_y - rim_h + 1, wt + 2, rim_h + 3),
+        1,
+    )
+    inner = (max(0, fill[0] - 55), max(0, fill[1] - 50), max(0, fill[2] - 45))
+    pygame.draw.arc(
+        surf,
+        inner,
+        (bx - wt // 2 + 2, rim_y - rim_h + 2, wt - 4, rim_h + 4),
+        0.15 * math.pi,
+        0.85 * math.pi,
+        2,
+    )
+    sh_col = (max(0, fill[0] - 35), max(0, fill[1] - 35), max(0, fill[2] - 30))
+    pygame.draw.line(surf, sh_col, (bx - wt // 2 + 3, rim_y - 2), (bx - wt // 2 + 3, by - 4), 2)
+    pygame.draw.line(surf, edge, (bx - wb // 2, by), (bx + wb // 2, by), 2)
 
 
 @dataclass
@@ -240,14 +373,15 @@ class ShotResult:
 
 
 class CupPongGame:
-    """Two players alternate throws at one shared rack; last cup wins for the shooter."""
+    """Two racks; players alternate shooting at the opponent's cups on the far end."""
 
     def __init__(self, initial_cups_per_side: int = INITIAL_CUPS_PER_SIDE) -> None:
         if initial_cups_per_side <= 0:
             raise ValueError("initial_cups_per_side must be greater than 0.")
 
         self.initial_cups_per_side = initial_cups_per_side
-        self.cups: List[bool] = [True] * initial_cups_per_side
+        self.player_one_cups: List[bool] = [True] * initial_cups_per_side
+        self.player_two_cups: List[bool] = [True] * initial_cups_per_side
         self.current_player = 1
         self.winner: Optional[int] = None
         self.attempts_left = ATTEMPTS_PER_ROUND
@@ -255,32 +389,41 @@ class CupPongGame:
 
     def reset(self) -> None:
         n = self.initial_cups_per_side
-        self.cups = [True] * n
+        self.player_one_cups = [True] * n
+        self.player_two_cups = [True] * n
         self.current_player = 1
         self.winner = None
         self.attempts_left = ATTEMPTS_PER_ROUND
         self.hits_this_turn = 0
 
-    def finish_throw(self, cup_index_if_hit: Optional[int]) -> ShotResult:
-        """Resolve one throw: cup_index_if_hit indexes a standing cup on the shared rack."""
+    def finish_throw(
+        self,
+        cup_index_if_hit: Optional[int],
+        *,
+        miss_detail: Optional[str] = None,
+    ) -> ShotResult:
+        """Resolve one throw: cup_index indexes a standing cup on the opponent rack."""
         if self.winner is not None:
             return ShotResult(False, "Game is over. Press R to reset.")
 
         hit = False
         msg = ""
-        rack = self.cups
+        opp = self._opponent_cups()
 
-        if cup_index_if_hit is not None and 0 <= cup_index_if_hit < len(rack):
-            if rack[cup_index_if_hit]:
-                rack[cup_index_if_hit] = False
+        if cup_index_if_hit is not None and 0 <= cup_index_if_hit < len(opp):
+            if opp[cup_index_if_hit]:
+                opp[cup_index_if_hit] = False
                 hit = True
                 self.hits_this_turn += 1
-                msg = "Hit! Cup removed."
+                msg = "Sunk! The ball dropped in — that cup is grayed out."
                 self._update_winner()
             else:
                 msg = "Miss — that cup is already down."
         else:
-            msg = "Miss."
+            if miss_detail:
+                msg = f"Miss — {miss_detail}."
+            else:
+                msg = "Miss."
 
         self.attempts_left -= 1
         extra = ""
@@ -288,14 +431,14 @@ class CupPongGame:
         if self.winner is None and self.attempts_left <= 0:
             if self.hits_this_turn >= ATTEMPTS_PER_ROUND:
                 shooter = self.current_player
-                receiver = self._add_penalty_cup_on_perfect_turn()
+                receiver = self._add_penalty_cup_to_shooter_stack()
                 if receiver is not None:
                     extra += (
-                        f" Player {shooter} went 2/2 — penalty cup added to the rack."
+                        f" Player {shooter} went 2/2 — penalty cup on Player {receiver}'s rack."
                     )
                 else:
                     extra += (
-                        f" Player {shooter} went 2/2 — no penalty cup (max {MAX_CUPS_PER_PLAYER} reached)."
+                        f" Player {shooter} went 2/2 — no penalty cup (max {MAX_CUPS_PER_PLAYER})."
                     )
             self.hits_this_turn = 0
             self.attempts_left = ATTEMPTS_PER_ROUND
@@ -304,35 +447,53 @@ class CupPongGame:
 
         return ShotResult(True, msg + extra, hit=hit, target_cup=cup_index_if_hit if hit else None)
 
-    def _add_penalty_cup_on_perfect_turn(self) -> Optional[int]:
-        """Two makes in one turn: add one cup back to the shared rack if under cap."""
-        if len(self.cups) >= MAX_CUPS_PER_PLAYER:
+    def _add_penalty_cup_to_shooter_stack(self) -> Optional[int]:
+        """Two makes in one turn: add one cup to the shooter's own rack if under cap."""
+        shooter = self.current_player
+        rack = self._cups_for_player(shooter)
+        if len(rack) >= MAX_CUPS_PER_PLAYER:
             return None
-        self.cups.append(True)
-        return self.current_player
+        rack.append(True)
+        return shooter
 
-    def remaining_cups(self) -> int:
-        return sum(1 for is_up in self.cups if is_up)
+    def remaining_cups(self, player: int) -> int:
+        cups = self._cups_for_player(player)
+        return sum(1 for is_up in cups if is_up)
 
     def _switch_player(self) -> None:
         self.current_player = 2 if self.current_player == 1 else 1
 
     def _update_winner(self) -> None:
-        if self.remaining_cups() == 0:
-            self.winner = self.current_player
+        if self.remaining_cups(1) == 0:
+            self.winner = 2
+        elif self.remaining_cups(2) == 0:
+            self.winner = 1
+
+    def _opponent_cups(self) -> List[bool]:
+        return self.player_two_cups if self.current_player == 1 else self.player_one_cups
+
+    def _cups_for_player(self, player: int) -> List[bool]:
+        if player == 1:
+            return self.player_one_cups
+        if player == 2:
+            return self.player_two_cups
+        raise ValueError("player must be 1 or 2.")
 
     def board_as_string(self) -> str:
-        line = " ".join("O" if cup else "X" for cup in self.cups)
+        def line(cups: List[bool]) -> str:
+            return " ".join("O" if c else "X" for c in cups)
+
         return (
-            "Cup Pong — shared rack (O = standing, X = removed)\n"
-            f"Cups: {line}\n"
+            "Cup Pong — two racks (O = standing, X = removed)\n"
+            f"Player 1 rack: {line(self.player_one_cups)}\n"
+            f"Player 2 rack: {line(self.player_two_cups)}\n"
             f"Current: Player {self.current_player} | Throws left: {self.attempts_left}"
         )
 
 
 def run_terminal_game() -> None:
     game = CupPongGame()
-    n = len(game.cups)
+    n = len(game._opponent_cups())
     print("Cup Pong (terminal) — m = miss, k = hit cup k (1-indexed), q = quit")
     print(f"{INITIAL_CUPS_PER_SIDE} cups per triangle; {ATTEMPTS_PER_ROUND} tries per turn.\n")
 
@@ -342,7 +503,7 @@ def run_terminal_game() -> None:
             print(f"\nPlayer {game.winner} wins!")
             break
 
-        mx = len(game.cups)
+        mx = len(game._opponent_cups())
         user_input = input(
             f"\nPlayer {game.current_player} ({game.attempts_left} throw(s) left): "
         ).strip().lower()
@@ -365,14 +526,15 @@ def run_pygame_gui() -> None:
     pygame.init()
     size = (1080, 720)
     screen = pygame.display.set_mode(size, pygame.HWSURFACE | pygame.DOUBLEBUF)
-    pygame.display.set_caption("Cup Pong — side view, shared rack")
+    pygame.display.set_caption("Cup Pong — two lanes (GamePigeon-style)")
     clock = pygame.time.Clock()
 
     bg = (32, 38, 48)
     felt = (38, 88, 58)
     wood = (92, 62, 38)
-    cup_up = (220, 210, 255)
-    cup_out = (70, 72, 82)
+    cup_p1_col = (200, 220, 255)
+    cup_p2_col = (255, 200, 200)
+    cup_out = (86, 88, 96)
     rim_c = (35, 32, 40)
     ring = (255, 215, 70)
     ball_c = (252, 248, 220)
@@ -385,61 +547,96 @@ def run_pygame_gui() -> None:
 
     game = CupPongGame()
     cup_r = 24.0
-    col_dx = 46.0
-    cup_center_wx = 0.0
+    RACK_CENTER_WX = 0.0
+    LANE_COL_DX = 44.0
     LAUNCH_WD = 36.0
     LAUNCH_WH = 6.0
     RIM_INTERACT_H = 52.0
+    # Frames at 60 FPS before next shot after a sink (shorter = faster handoff to next player / next throw).
+    SUNK_ANIM_FRAMES = 9
 
-    def cup_lateral_positions() -> List[float]:
-        return rack_world_wx(len(game.cups), cup_center_wx, col_dx)
+    def cup_placements_p1() -> List[Tuple[float, float]]:
+        return rack_world_placements(
+            len(game.player_one_cups), RACK_CENTER_WX, LANE_COL_DX, CUP_PLANE_WD
+        )
 
-    def launcher_screen() -> Tuple[float, float]:
-        return world_to_screen(LAUNCH_WD, 0.0, LAUNCH_WH, size[0], size[1])
+    def cup_placements_p2() -> List[Tuple[float, float]]:
+        return rack_world_placements(
+            len(game.player_two_cups), RACK_CENTER_WX, LANE_COL_DX, CUP_PLANE_WD
+        )
 
-    def dist_to_launcher_screen(pos: Tuple[int, int]) -> float:
-        lx, ly = launcher_screen()
+    def launch_world(player: int) -> Tuple[float, float, float]:
+        return LAUNCH_WD, RACK_CENTER_WX, LAUNCH_WH
+
+    def shooter_lane(player: int) -> int:
+        return 1 if player == 1 else 2
+
+    def launcher_screen_for_player(player: int) -> Tuple[float, float]:
+        wd0, wx0, wh0 = launch_world(player)
+        return world_to_screen_lane(wd0, wx0, wh0, shooter_lane(player), size[0], size[1])
+
+    def active_launcher_screen() -> Tuple[float, float]:
+        return launcher_screen_for_player(game.current_player)
+
+    def dist_to_active_launcher(pos: Tuple[int, int]) -> float:
+        lx, ly = active_launcher_screen()
         return math.hypot(pos[0] - lx, pos[1] - ly)
 
     def draw_table() -> None:
         sw, sh = size[0], size[1]
-        near_l, near_r = 70.0, float(sw) - 70.0
-        far_l, far_r = 260.0, float(sw) - 260.0
-        ny = float(sh) - 55.0
-        fy = 210.0
-        pts = [
-            (int(near_l), int(ny)),
-            (int(near_r), int(ny)),
-            (int(far_r), int(fy)),
-            (int(far_l), int(fy)),
-        ]
-        pygame.draw.polygon(screen, felt, pts)
-        pygame.draw.polygon(screen, wood, pts, width=4)
-        pygame.draw.line(screen, (55, 40, 28), (int(near_l), int(ny)), (int(near_r), int(ny)), 6)
+        pygame.draw.rect(screen, (148, 118, 82), (0, int(sh) - 155, sw, 155))
+        pygame.draw.rect(screen, (175, 148, 112), (0, int(sh) - 168, sw, 18))
+        line_w = (235, 240, 248)
+        for lane in (1, 2):
+            nl, nr, fl, fr, ny, fy = lane_trapezoid_bounds(sw, sh, lane)
+            pts = [
+                (int(nl), int(ny)),
+                (int(nr), int(ny)),
+                (int(fr), int(fy)),
+                (int(fl), int(fy)),
+            ]
+            pygame.draw.polygon(screen, felt, pts)
+            pygame.draw.polygon(screen, wood, pts, width=3)
+            pygame.draw.line(screen, (55, 40, 28), (int(nl), int(ny)), (int(nr), int(ny)), 5)
+            ncx = 0.5 * (nl + nr)
+            fcx = 0.5 * (fl + fr)
+            pygame.draw.line(screen, line_w, (int(ncx), int(ny)), (int(fcx), int(fy)), 2)
 
     def draw_cups_side() -> None:
-        opp = game.cups
-        wxs = cup_lateral_positions()
-        for i, wxi in enumerate(wxs):
-            if i >= len(opp):
-                break
-            sx, sy = world_to_screen(CUP_PLANE_WD, wxi, 0.0, size[0], size[1])
-            col = cup_up if opp[i] else cup_out
-            rx = int(cup_r * 0.95)
-            ry = int(cup_r * 1.5)
-            pygame.draw.ellipse(screen, col, (int(sx - rx), int(sy - ry), 2 * rx, 2 * ry))
-            pygame.draw.ellipse(screen, rim_c, (int(sx - rx), int(sy - ry), 2 * rx, 2 * ry), 2)
+        vis_scale = cup_r / 11.0
+        front_wd = CUP_PLANE_WD - 3.0 * PYRAMID_ROW_WD
+        to_draw: List[Tuple[float, float, float, Tuple[int, int, int], bool, float]] = []
+        for placements, cups, fill, lane in (
+            (cup_placements_p2(), game.player_two_cups, cup_p2_col, 1),
+            (cup_placements_p1(), game.player_one_cups, cup_p1_col, 2),
+        ):
+            for i, (wxi, wdi) in enumerate(placements):
+                if i >= len(cups):
+                    break
+                sx, sy = world_to_screen_lane(wdi, wxi, 0.0, lane, size[0], size[1])
+                fill_use = fill if cups[i] else cup_out
+                depth_vis = (wdi - front_wd) / max(1.0, 3.0 * PYRAMID_ROW_WD)
+                depth_vis = max(0.0, min(1.0, depth_vis))
+                scale_i = vis_scale * (0.86 + 0.14 * depth_vis)
+                to_draw.append((wdi, sx, sy, fill_use, cups[i], scale_i))
+        to_draw.sort(key=lambda row: (-row[0], row[1]))
+        for _, sx, sy, fill, standing, sc in to_draw:
+            draw_cup_side_profile(screen, sx, sy, sc, fill, rim_c, standing)
 
     phase = "IDLE"
     aim_start: Optional[Tuple[int, int]] = None
-    ball_wd = LAUNCH_WD
-    ball_wx = 0.0
-    ball_wh = LAUNCH_WH
+    sunk_anim_ticks = 0
+    sunk_ball: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    sunk_lane = 1
+    _lw0, _lwx0, _lwh0 = launch_world(1)
+    ball_wd = _lw0
+    ball_wx = _lwx0
+    ball_wh = _lwh0
     ball_vd = 0.0
     ball_vwx = 0.0
     ball_vh = 0.0
     flight_ticks = 0
-    status = "Player 1 — drag from the yellow dot toward the cups (longer drag = harder)."
+    status = "Player 1 — left table: shoot from your dot, aim at the pink cups."
     sink_qualified: List[bool] = []
     running = True
 
@@ -453,16 +650,20 @@ def run_pygame_gui() -> None:
                 elif event.key == pygame.K_r and game.winner is not None:
                     game.reset()
                     phase = "IDLE"
-                    status = "New game — Player 1's turn."
+                    sunk_anim_ticks = 0
+                    sunk_lane = 1
+                    status = "New game — Player 1's turn (left lane → pink cups)."
+                    lw, lwx, lwh = launch_world(1)
+                    ball_wd, ball_wx, ball_wh = lw, lwx, lwh
             elif game.winner is None and phase == "IDLE":
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if dist_to_launcher_screen(event.pos) <= LAUNCH_GRAB_RADIUS:
+                    if dist_to_active_launcher(event.pos) <= LAUNCH_GRAB_RADIUS:
                         aim_start = event.pos
                         phase = "AIMING"
             elif game.winner is None and phase == "AIMING":
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and aim_start is not None:
                     mx, my = event.pos
-                    lsx, lsy = launcher_screen()
+                    lsx, lsy = active_launcher_screen()
                     du, dv = mx - lsx, my - lsy
                     drag_len = math.hypot(du, dv)
                     if drag_len < MIN_DRAG_TO_FIRE:
@@ -475,18 +676,28 @@ def run_pygame_gui() -> None:
                             min(MAX_THROW_POWER, drag_len * DRAG_POWER_PER_PX),
                         )
                         ux, uy = du / drag_len, dv / drag_len
-                        ball_vd = max(0.12, ux) * power * 1.08
-                        ball_vh = -uy * power * 1.12
-                        ball_vwx = ux * power * 0.14 + math.copysign(0.35, du) * abs(uy) * power * 0.08
-                        ball_wd = LAUNCH_WD
-                        ball_wx = 0.0
-                        ball_wh = LAUNCH_WH
+                        cp = game.current_player
+                        lw, lwx, lwh = launch_world(cp)
+                        opp_cx = RACK_CENTER_WX
+                        tow_wx = opp_cx - lwx
+                        screen_fwd = ux if cp == 1 else -ux
+                        ball_vd = power * (0.86 + 0.22 * max(0.0, screen_fwd) + 0.12 * max(0.0, -uy))
+                        ball_vwx = tow_wx * (power / 188.0) + ux * power * 0.31
+                        # Arc: always loft toward apex, extra when dragging upward on screen.
+                        ball_vh = -power * (0.48 + max(0.0, -uy) * 1.02)
+                        ball_wd, ball_wx, ball_wh = lw, lwx, lwh
                         phase = "BALL"
                         flight_ticks = 0
                         sink_qualified = []
                     aim_start = None
 
+        if phase == "SUNK":
+            sunk_anim_ticks -= 1
+            if sunk_anim_ticks <= 0:
+                phase = "IDLE"
+
         if phase == "BALL" and game.winner is None:
+            rack_front_wd = CUP_PLANE_WD - 3.0 * PYRAMID_ROW_WD
             prev_wd = ball_wd
             prev_wx = ball_wx
             prev_wh = ball_wh
@@ -497,32 +708,49 @@ def run_pygame_gui() -> None:
             ball_wh += ball_vh
             flight_ticks += 1
 
-            opp = game.cups
-            opp_wx = cup_lateral_positions()
-            n_opp = len(opp_wx)
+            if ball_wh < 0.0:
+                ball_wh = 0.0
+                if ball_vh < 0.0:
+                    ball_vh *= -0.38
+                if abs(ball_vh) < 0.55:
+                    ball_vh = 0.0
+                ball_vd *= 0.86
+                ball_vwx *= 0.85
+
+            if game.current_player == 1:
+                opp = game.player_two_cups
+                opp_pts = cup_placements_p2()
+            else:
+                opp = game.player_one_cups
+                opp_pts = cup_placements_p1()
+            n_opp = len(opp_pts)
             if len(sink_qualified) < n_opp:
                 sink_qualified.extend([False] * (n_opp - len(sink_qualified)))
             elif len(sink_qualified) > n_opp:
                 del sink_qualified[n_opp:]
 
-            opening_half = cup_r * CUP_OPENING_HALF_FRAC
+            opening_r = cup_r * CUP_OPENING_HALF_FRAC * 1.22
             sink_max_d = cup_r - BALL_RADIUS * CUP_SINK_CENTER_FRAC
             wh_lip = cup_r * CUP_LIP_WH_FRAC
             speed = math.hypot(ball_vd, ball_vwx, ball_vh)
 
-            for i, wxi in enumerate(opp_wx):
+            lip_pt = _lip_cross_table_point(
+                prev_wx, prev_wh, prev_wd, ball_wx, ball_wh, ball_wd, wh_lip
+            )
+            for i, (wxi, wdi) in enumerate(opp_pts):
                 if i >= len(opp) or not opp[i]:
                     continue
-                cross_wx = _lip_cross_wx_at_height(prev_wx, prev_wh, ball_wx, ball_wh, wh_lip)
-                if cross_wx is not None and abs(cross_wx - wxi) <= opening_half:
-                    sink_qualified[i] = True
+                if lip_pt is not None:
+                    cx, cd = lip_pt
+                    if math.hypot(cx - wxi, cd - wdi) <= opening_r:
+                        sink_qualified[i] = True
 
             hit_idx: Optional[int] = None
             best_d = float("inf")
-            for i, wxi in enumerate(opp_wx):
+            for i, (wxi, wdi) in enumerate(opp_pts):
                 if i >= len(opp) or not opp[i]:
                     continue
-                planar = math.hypot(ball_wd - CUP_PLANE_WD, ball_wx - wxi)
+                planar = math.hypot(ball_wd - wdi, ball_wx - wxi)
                 if planar > sink_max_d:
                     continue
                 if not sink_qualified[i]:
@@ -534,69 +762,127 @@ def run_pygame_gui() -> None:
                         best_d = planar
                         hit_idx = i
 
+            shot_done = False
             if hit_idx is not None:
+                wxi, wdi = opp_pts[hit_idx]
                 res = game.finish_throw(hit_idx)
                 status = res.message
-                phase = "IDLE"
-            elif (
-                ball_wd > TABLE_DEPTH + 140
-                or ball_wd < -35
-                or ball_wh < -120
-                or ball_wh > 420
-                or abs(ball_wx) > 220
-                or flight_ticks > 640
-            ):
-                res = game.finish_throw(None)
-                status = res.message
-                phase = "IDLE"
-            else:
-                nw, nwx, nwh, nvd, nvwx, nvh = _resolve_cup_rim_squeeze_world(
-                    ball_wd,
-                    ball_wx,
-                    ball_wh,
-                    ball_vd,
-                    ball_vwx,
-                    ball_vh,
-                    opp_wx,
-                    opp,
-                    cup_r,
-                    sink_qualified,
-                    sink_max_d,
-                    CUP_PLANE_WD,
-                    RIM_INTERACT_H,
-                )
-                ball_wd, ball_wx, ball_wh = nw, nwx, nwh
-                ball_vd, ball_vwx, ball_vh = nvd, nvwx, nvh
+                sunk_ball = (wdi, wxi, cup_r * 0.42)
+                sunk_lane = 1 if game.current_player == 1 else 2
+                sunk_anim_ticks = SUNK_ANIM_FRAMES
+                phase = "SUNK"
+                shot_done = True
+            elif ball_wh <= 0.08 and abs(ball_vh) < 0.52:
+                spd_xy = math.hypot(ball_vd, ball_vwx)
+                if spd_xy < 3.05:
+                    detail: Optional[str] = None
+                    if ball_wd < rack_front_wd - 48.0:
+                        detail = "short — stopped on the felt before the rack"
+                    elif ball_wd > CUP_PLANE_WD + 36.0:
+                        detail = "long — rolled past the cups on the felt"
+                    elif rack_front_wd - 30.0 < ball_wd < CUP_PLANE_WD + 26.0:
+                        min_drack = min(
+                            (
+                                math.hypot(ball_wd - wdi, ball_wx - wxi)
+                                for i, (wxi, wdi) in enumerate(opp_pts)
+                                if i < len(opp) and opp[i]
+                            ),
+                            default=999.0,
+                        )
+                        if min_drack > 98.0:
+                            detail = "wide — on the felt but outside the cups"
+                    if detail is not None:
+                        res = game.finish_throw(None, miss_detail=detail)
+                        status = res.message
+                        phase = "IDLE"
+                        shot_done = True
+
+            if not shot_done:
+                miss_air: Optional[str] = None
+                if ball_wd > CUP_PLANE_WD + 95.0:
+                    miss_air = "long — past the cups"
+                elif ball_wd > TABLE_DEPTH + 130.0:
+                    miss_air = "long — off the end of the table"
+                elif ball_wd < -42.0:
+                    miss_air = "behind you — not toward the rack"
+                elif abs(ball_wx) > 148.0:
+                    miss_air = "wide — far off to the side"
+                elif ball_wh > 410.0:
+                    miss_air = "too high"
+                elif ball_wh < -95.0:
+                    miss_air = "dropped out of play"
+                elif flight_ticks > 640:
+                    miss_air = "timed out"
+
+                if miss_air is not None:
+                    res = game.finish_throw(None, miss_detail=miss_air)
+                    status = res.message
+                    phase = "IDLE"
+                else:
+                    nw, nwx, nwh, nvd, nvwx, nvh = _resolve_cup_rim_squeeze_world(
+                        ball_wd,
+                        ball_wx,
+                        ball_wh,
+                        ball_vd,
+                        ball_vwx,
+                        ball_vh,
+                        opp_pts,
+                        opp,
+                        cup_r,
+                        sink_qualified,
+                        sink_max_d,
+                        RIM_INTERACT_H,
+                    )
+                    ball_wd, ball_wx, ball_wh = nw, nwx, nwh
+                    ball_vd, ball_vwx, ball_vh = nvd, nvwx, nvh
 
         screen.fill(bg)
         draw_table()
         draw_cups_side()
 
-        lsx, lsy = launcher_screen()
-        pygame.draw.circle(screen, ring, (int(lsx), int(lsy)), 11, width=2)
+        for pl, lc in ((1, cup_p1_col), (2, cup_p2_col)):
+            lx, ly = launcher_screen_for_player(pl)
+            pygame.draw.circle(screen, lc, (int(lx), int(ly)), 7)
+            pygame.draw.circle(screen, ring, (int(lx), int(ly)), 11, width=2)
 
         if game.winner is None:
-            pygame.draw.circle(screen, highlight, (int(lsx), int(lsy)), 15, width=3)
-            turn_txt = f"PLAYER {game.current_player} — shared rack  |  Throws: {game.attempts_left}"
+            alx, aly = active_launcher_screen()
+            pygame.draw.circle(screen, highlight, (int(alx), int(aly)), 15, width=3)
+            aim_hint = "LEFT lane (pink)" if game.current_player == 1 else "RIGHT lane (blue)"
+            turn_txt = f"PLAYER {game.current_player} — aim {aim_hint}  |  Throws: {game.attempts_left}"
             tw = font_lg.render(turn_txt, True, ring)
             screen.blit(tw, (size[0] // 2 - tw.get_width() // 2, 12))
-
-            if phase == "BALL":
-                bx, by = world_to_screen(ball_wd, ball_wx, ball_wh, size[0], size[1])
-                pygame.draw.circle(screen, ball_c, (int(bx), int(by)), BALL_RADIUS)
-                pygame.draw.circle(screen, (45, 40, 35), (int(bx), int(by)), BALL_RADIUS, 2)
         else:
             w = font_lg.render(
-                f"PLAYER {game.winner} WINS!  (cleared the rack)  R = new game", True, ring
+                f"PLAYER {game.winner} WINS!  (cleared opponent's rack)  R = new game", True, ring
             )
             screen.blit(w, (size[0] // 2 - w.get_width() // 2, 12))
 
+        if phase == "BALL":
+            bl = shooter_lane(game.current_player)
+            bx, by = world_to_screen_lane(ball_wd, ball_wx, ball_wh, bl, size[0], size[1])
+            pygame.draw.circle(screen, ball_c, (int(bx), int(by)), BALL_RADIUS)
+            pygame.draw.circle(screen, (45, 40, 35), (int(bx), int(by)), BALL_RADIUS, 2)
+        elif phase == "SUNK":
+            sd, sxw, swh = sunk_ball
+            bx, by = world_to_screen_lane(sd, sxw, swh, sunk_lane, size[0], size[1])
+            pygame.draw.circle(screen, ball_c, (int(bx), int(by)), BALL_RADIUS)
+            pygame.draw.circle(screen, (45, 40, 35), (int(bx), int(by)), BALL_RADIUS, 2)
+
         screen.blit(
-            font_md.render("You — at the near end of the table", True, text_c),
+            font_md.render(
+                "Two tables: left lane = P1 (shoot pink)  |  right lane = P2 (shoot blue)",
+                True,
+                text_c,
+            ),
             (24, size[1] - 118),
         )
         screen.blit(
-            font_md.render("Cups — far end (same rack for both players)", True, text_c),
+            font_md.render(
+                "Each lane has its own felt, centerline, and ball dot at the near end",
+                True,
+                text_c,
+            ),
             (24, size[1] - 92),
         )
 
