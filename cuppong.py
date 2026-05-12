@@ -15,15 +15,89 @@ import pygame
 INITIAL_CUPS_PER_SIDE = 10
 MAX_CUPS_PER_PLAYER = 20
 ATTEMPTS_PER_ROUND = 2
-GRAVITY = 0.35
+GRAVITY = 0.30
 BALL_RADIUS = 9
-MAX_SPEED = 17.0
+# Bottom launchers to top racks need ~500+ px vertical travel; cap must allow steep shots.
+MAX_SPEED = 27.0
 LAUNCH_GRAB_RADIUS = 72
 MIN_DRAG_TO_FIRE = 14
 SWIPE_LOOKBACK_MS = 220
 FRAME_MS = 1000.0 / 60.0
-SWIPE_POWER_SCALE = 1.25
-MIN_THROW_SPEED = 6.0
+SWIPE_POWER_SCALE = 1.65
+MIN_THROW_SPEED = 9.0
+
+# Realistic sink: ball must pass through cup mouth while falling; rim grazes don't score.
+CUP_OPENING_HALF_FRAC = 0.34
+CUP_LIP_Y_FRAC = 0.86
+CUP_SINK_CENTER_FRAC = 0.88  # ball center must be this deep: d <= cup_r - BALL_RADIUS * frac
+CUP_SETTLE_SPEED = 2.5
+
+
+def _lip_cross_x(
+    prev_x: float,
+    prev_y: float,
+    x: float,
+    y: float,
+    y_lip: float,
+) -> Optional[float]:
+    """If segment crosses y_lip downward (increasing y), return x at crossing."""
+    if y <= prev_y or abs(y - prev_y) < 1e-9:
+        return None
+    if prev_y >= y_lip or y < y_lip:
+        return None
+    t = (y_lip - prev_y) / (y - prev_y)
+    if not (0.0 <= t <= 1.0):
+        return None
+    return prev_x + t * (x - prev_x)
+
+
+def _resolve_cup_rim_squeeze(
+    ball_pos: pygame.Vector2,
+    ball_vel: pygame.Vector2,
+    opp_pts: List[Tuple[float, float]],
+    opp: List[bool],
+    cup_r: float,
+    sink_qualified: List[bool],
+    sink_max_d: float,
+) -> None:
+    """Push the ball out of overlapping cup rims; combined separation avoids ping-pong between cups."""
+    margin = cup_r + BALL_RADIUS + 1.4
+    for _ in range(10):
+        sep_x = 0.0
+        sep_y = 0.0
+        touch = 0
+        for i, (cxi, cyi) in enumerate(opp_pts):
+            if i >= len(opp) or not opp[i]:
+                continue
+            d = math.hypot(ball_pos.x - cxi, ball_pos.y - cyi)
+            if d >= margin - 0.02:
+                continue
+            qualified = i < len(sink_qualified) and sink_qualified[i]
+            if qualified and d <= sink_max_d:
+                continue
+            if d < 1e-4:
+                d = 1e-4
+            nx = (ball_pos.x - cxi) / d
+            ny = (ball_pos.y - cyi) / d
+            pen = margin - d
+            sep_x += nx * pen
+            sep_y += ny * pen
+            touch += 1
+        if touch == 0:
+            break
+        ball_pos.x += sep_x
+        ball_pos.y += sep_y
+        spd = math.hypot(ball_vel.x, ball_vel.y)
+        if touch >= 2:
+            ball_vel.x *= 0.38
+            ball_vel.y *= 0.38
+        elif spd < 5.5:
+            ball_vel.x *= 0.55
+            ball_vel.y *= 0.55
+        else:
+            ball_vel.x *= 0.72
+            ball_vel.y *= 0.72
+        ball_vel.y += 0.09 * touch
 
 
 def triangle_row_counts(total: int) -> List[int]:
@@ -289,6 +363,7 @@ def run_pygame_gui() -> None:
     ball_vel = pygame.Vector2()
     flight_ticks = 0
     status = "Player 1 shoots up the LEFT lane toward the left rack."
+    sink_qualified: List[bool] = []
     running = True
 
     while running:
@@ -348,10 +423,13 @@ def run_pygame_gui() -> None:
                         ball_vel.update(vx, vy)
                         phase = "BALL"
                         flight_ticks = 0
+                        sink_qualified = []
                     aim_start = None
                     aim_trace = []
 
         if phase == "BALL" and game.winner is None:
+            prev_x = ball_pos.x
+            prev_y = ball_pos.y
             ball_vel.y += GRAVITY
             ball_pos += ball_vel
             flight_ticks += 1
@@ -364,13 +442,43 @@ def run_pygame_gui() -> None:
                 opp_pts = positions_p1()
                 opp = game.player_one_cups
 
+            n_opp = len(opp_pts)
+            if len(sink_qualified) < n_opp:
+                sink_qualified.extend([False] * (n_opp - len(sink_qualified)))
+            elif len(sink_qualified) > n_opp:
+                del sink_qualified[n_opp:]
+
+            opening_half = cup_r * CUP_OPENING_HALF_FRAC
+            sink_max_d = cup_r - BALL_RADIUS * CUP_SINK_CENTER_FRAC
+            speed = math.hypot(ball_vel.x, ball_vel.y)
+
+            for i, (cxi, cyi) in enumerate(opp_pts):
+                if i >= len(opp) or not opp[i]:
+                    continue
+                y_lip = cyi - cup_r * CUP_LIP_Y_FRAC
+                cx = _lip_cross_x(prev_x, prev_y, ball_pos.x, ball_pos.y, y_lip)
+                if cx is not None and abs(cx - cxi) <= opening_half:
+                    sink_qualified[i] = True
+
+            best_i: Optional[int] = None
+            best_d = float("inf")
             for i, (cxi, cyi) in enumerate(opp_pts):
                 if i >= len(opp) or not opp[i]:
                     continue
                 d = math.hypot(ball_pos.x - cxi, ball_pos.y - cyi)
-                if d <= cup_r + BALL_RADIUS:
-                    hit_idx = i
-                    break
+                if d > sink_max_d:
+                    continue
+                if not sink_qualified[i]:
+                    continue
+                descending = ball_vel.y >= -0.35
+                settled = speed < CUP_SETTLE_SPEED and d <= cup_r * 0.52
+                if descending or settled:
+                    if d < best_d:
+                        best_d = d
+                        best_i = i
+
+            if best_i is not None:
+                hit_idx = best_i
 
             if hit_idx is not None:
                 res = game.finish_throw(hit_idx)
@@ -390,6 +498,10 @@ def run_pygame_gui() -> None:
                 if ball_pos.x < BALL_RADIUS + 16 or ball_pos.x > size[0] - BALL_RADIUS - 16:
                     ball_vel.x *= -0.72
                     ball_pos.x = max(BALL_RADIUS + 17, min(size[0] - BALL_RADIUS - 17, ball_pos.x))
+
+                _resolve_cup_rim_squeeze(
+                    ball_pos, ball_vel, opp_pts, opp, cup_r, sink_qualified, sink_max_d
+                )
 
         screen.fill(bg)
         pygame.draw.rect(screen, table, (28, 72, size[0] - 56, 560), border_radius=16)
