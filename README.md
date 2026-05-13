@@ -112,4 +112,4 @@ Cup Pong was easily the most difficult games to develop because, unlike the othe
 
 Overall, even with AI assistance, this project required significant time, effort, and problem-solving. We spent many hours testing, editing, troubleshooting, and making design decisions. The process helped us learn how to use AI as a support tool rather than a replacement for our own understanding, while also giving us more experience with Python, Pygame, debugging, and interactive game development.
 
-# Have fun!
+# HAVE FUN PLAYING!
