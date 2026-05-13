@@ -740,32 +740,23 @@ def run_pygame_gui() -> None:
             hy += line_gap - 4 # hy is the y position of the hint text
 
     # this function is used to reset the match from the ui
-    def reset_match_from_ui() -> None: # reset the match from the ui
+    def reset_match_from_ui() -> None:
         nonlocal phase, sunk_anim_ticks, sunk_lane, opening_plane_done
         nonlocal shot_preview_trail, shot_preview_outcome
         nonlocal ball_wd, ball_wx, ball_wh, ball_vd, ball_vwx, ball_vh, flight_ticks
         game.reset()
-        phase = "IDLE" # phase is the phase of the game
-        sunk_anim_ticks = 0 # sunk_anim_ticks is the number of frames at 60 FPS before next shot after a sink
-        sunk_lane = 1 # sunk_lane is the lane of the sunk cup
-        opening_plane_done = False # opening_plane_done is True if the opening plane is done
-        shot_preview_trail = [] # shot_preview_trail is the trail of the shot preview
-        nonlocal phase, sunk_anim_ticks, sunk_lane, opening_plane_done
-        nonlocal shot_preview_trail, shot_preview_outcome
-        nonlocal ball_wd, ball_wx, ball_wh, ball_vd, ball_vwx, ball_vh, flight_ticks
-        game.reset() # reset the game
-        phase = "IDLE" # phase is the phase of the game
-        sunk_anim_ticks = 0 # sunk_anim_ticks is the number of frames at 60 FPS before next shot after a sink
-        sunk_lane = 1 # sunk_lane is the lane of the sunk cup
-        opening_plane_done = False # opening_plane_done is True if the opening plane is done
-        shot_preview_trail = [] # shot_preview_trail is the trail of the shot preview
-        shot_preview_outcome = "" # shot_preview_outcome is the outcome of the shot preview
-        lw, lwx, lwh = launch_world()  # world (wd, wx, wh) at launcher
-        ball_wd, ball_wx, ball_wh = lw, lwx, lwh  # current world position
-        ball_vd = 0.0  # depth velocity
-        ball_vwx = 0.0  # lateral velocity
-        ball_vh = 0.0  # height velocity
-        flight_ticks = 0  # reset shot integration step counter
+        phase = "IDLE"
+        sunk_anim_ticks = 0
+        sunk_lane = 1
+        opening_plane_done = False
+        shot_preview_trail = []
+        shot_preview_outcome = ""
+        lw, lwx, lwh = launch_world()
+        ball_wd, ball_wx, ball_wh = lw, lwx, lwh
+        ball_vd = 0.0
+        ball_vwx = 0.0
+        ball_vh = 0.0
+        flight_ticks = 0
 
     # this function is used to draw the win overlay
     def draw_win_overlay() -> None: # draw the win overlay
