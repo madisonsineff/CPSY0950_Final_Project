@@ -287,7 +287,7 @@ def run_game():
         if not game_over:
             tc = (255,220,120) if turn == P1 else (130,205,255)
             wt = font_small.render(f"Player {turn}'s turn — press 1 to 6", True, tc)
-            screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 10))
+            screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 20))
 
         # ── bottom hint ──
         h = font_hint.render("H = hub   R = restart   Esc = quit", True, (80,85,105))
