@@ -207,7 +207,3 @@ def run_pygame_game() -> None:
         clock.tick(60)
 
     pygame.quit()
-
-
-if __name__ == "__main__":
-    run_pygame_game()
