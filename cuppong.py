@@ -9,7 +9,7 @@ import math
 import pathlib
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import pygame
@@ -31,6 +31,8 @@ CUP_PLANE_WD = 480.0
 PYRAMID_ROW_WD = 56.0
 # Drawing only: table-surface Y uses this depth for every cup so bases line up (level rack).
 CUP_RACK_SCREEN_BASELINE_WD = CUP_PLANE_WD - 1.5 * PYRAMID_ROW_WD
+# World wd of the front rack row (physics, preview sim, cup perspective).
+RACK_FRONT_ROW_WD = CUP_PLANE_WD - 3.0 * PYRAMID_ROW_WD
 
 # Flat far rack: descending crossing of rim-height plane (world wh).
 # Lateral distance from a standing cup's center <= cup_r * this counts as a sink (cup top / rim band).
@@ -216,7 +218,6 @@ def _simulate_shot_trail(
     vd, vwx, vh = ball_vd, ball_vwx, ball_vh
     trail: List[Tuple[float, float, float]] = [(lw, lwx, lwh)]
     opening_plane_done = False
-    rack_front_wd = CUP_PLANE_WD - 3.0 * PYRAMID_ROW_WD
     rim_wh = cup_r * CUP_RIM_PLANE_WH_FRAC
     sink_r = cup_r * CUP_TOP_SINK_FRAC
     flight_ticks = 0
@@ -249,7 +250,7 @@ def _simulate_shot_trail(
                     opening_plane_done = True # opening_plane_done is True if the ball has crossed the rim
                     cx = prev_wx + tr * (wx - prev_wx) # cx is the lateral position of the ball at the time of the rim crossing
                     cd = prev_wd + tr * (wd - prev_wd) # cd is the depth of the ball at the time of the rim crossing
-                    if cd < rack_front_wd - 32.0:
+                    if cd < RACK_FRONT_ROW_WD - 32.0:
                         trail.append((wd, wx, wh)) # append the current position of the ball to the trail
                         return trail, "short_plane"
                     if cd > CUP_PLANE_WD + 48.0:
@@ -283,11 +284,11 @@ def _simulate_shot_trail(
             spd_xy = math.hypot(vd, vwx)  # speed in the felt plane (depth + lateral)      
             if spd_xy < 3.05: # if the speed of the ball is less than 3.05, set the detail to the ground_short, ground_long, or ground_wide
                 detail: Optional[str] = None
-                if wd < rack_front_wd - 42.0:
+                if wd < RACK_FRONT_ROW_WD - 42.0:
                     detail = "ground_short" # if the depth of the ball is less than the rack front depth, set the detail to ground_short
                 elif wd > CUP_PLANE_WD + 42.0:
                     detail = "ground_long" # if the depth of the ball is greater than the cup plane depth, set the detail to ground_long
-                elif rack_front_wd - 28.0 < wd < CUP_PLANE_WD + 32.0:
+                elif RACK_FRONT_ROW_WD - 28.0 < wd < CUP_PLANE_WD + 32.0:
                     min_drack = min(
                         (
                             math.hypot(wd - wdi, wx - wxi)
@@ -619,6 +620,81 @@ def _wrap_instruction_paragraphs(
         out.extend(_wrap_text_to_width(font, para, max_width)) # add the wrapped text to the list of wrapped text
     return out # return the list of wrapped text    
 
+# --- pygame GUI helpers (pure drawing; keeps run_pygame_gui readable) ---
+
+
+def _draw_filled_round_rect(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    fill: Tuple[int, int, int],
+    border: Tuple[int, int, int],
+    border_width: int,
+    radius: int,
+) -> None:
+    pygame.draw.rect(surf, fill, rect, border_radius=radius)
+    pygame.draw.rect(surf, border, rect, width=border_width, border_radius=radius)
+
+
+def _draw_labeled_round_button(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    font: pygame.font.Font,
+    label: str,
+    text_rgb: Tuple[int, int, int],
+    fill_idle: Tuple[int, int, int],
+    fill_hover: Tuple[int, int, int],
+    border_rgb: Tuple[int, int, int],
+    border_width: int,
+    radius: int,
+    mouse_pos: Tuple[int, int],
+) -> None:
+    fill = fill_idle if not rect.collidepoint(mouse_pos) else fill_hover
+    _draw_filled_round_rect(surf, rect, fill, border_rgb, border_width, radius)
+    surf_text = font.render(label, True, text_rgb)
+    surf.blit(
+        surf_text,
+        (rect.centerx - surf_text.get_width() // 2, rect.centery - surf_text.get_height() // 2),
+    )
+
+
+def _blit_text_with_drop_shadow(
+    surf: pygame.Surface,
+    font: pygame.font.Font,
+    text: str,
+    color: Tuple[int, int, int],
+    shadow: Tuple[int, int, int],
+    pos: Tuple[int, int],
+) -> None:
+    shadow_surf = font.render(text, True, shadow)
+    main_surf = font.render(text, True, color)
+    x, y = pos
+    surf.blit(shadow_surf, (x + 2, y + 2))
+    surf.blit(main_surf, (x, y))
+
+
+@dataclass
+class CupPongGuiSession:
+    """Mutable per-window state for :func:`run_pygame_gui` (one instance per run)."""
+
+    phase: str = "IDLE"
+    sunk_anim_ticks: int = 0
+    sunk_lane: int = 1
+    opening_plane_done: bool = False
+    ball_wd: float = 0.0
+    ball_wx: float = 0.0
+    ball_wh: float = 0.0
+    ball_vd: float = 0.0
+    ball_vwx: float = 0.0
+    ball_vh: float = 0.0
+    flight_ticks: int = 0
+    running: bool = True
+    shot_preview_trail: List[Tuple[float, float, float]] = field(default_factory=list)
+    shot_preview_lane: int = 1
+    shot_preview_outcome: str = ""
+    app_phase: str = "INSTRUCTIONS"
+    sunk_ball: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
 # this function is used to run the pygame gui
 def run_pygame_gui() -> None:
     pygame.init() # initialize pygame
@@ -660,30 +736,28 @@ def run_pygame_gui() -> None:
     # Frames at 60 FPS before next shot after a sink (shorter = faster handoff to next player / next throw).
     SUNK_ANIM_FRAMES = 9 # SUNK_ANIM_FRAMES is the number of frames at 60 FPS before next shot after a sink
 
-    # this function is used to get the cup placements for player 1
-    def cup_placements_p1() -> List[Tuple[float, float]]:
-        return rack_world_placements( # return the cup placements for player 1
-            len(game.player_one_cups), RACK_CENTER_WX, LANE_COL_DX, CUP_PLANE_WD # return the cup placements for player 1
-        )
-    # this function is used to get the cup placements for player 2
-    def cup_placements_p2() -> List[Tuple[float, float]]:
-        return rack_world_placements( # return the cup placements for player 2
-            len(game.player_two_cups), RACK_CENTER_WX, LANE_COL_DX, CUP_PLANE_WD
-        )
+    def cup_placements_for_side(rack_owner: int) -> List[Tuple[float, float]]:
+        rack = game.player_one_cups if rack_owner == 1 else game.player_two_cups
+        return rack_world_placements(len(rack), RACK_CENTER_WX, LANE_COL_DX, CUP_PLANE_WD)
+
+    def opponent_rack_for_shooter(shooter: int) -> Tuple[List[bool], List[Tuple[float, float]]]:
+        if shooter == 1:
+            return game.player_two_cups, cup_placements_for_side(2)
+        return game.player_one_cups, cup_placements_for_side(1)
     # this function is used to get the launch world
     def launch_world() -> Tuple[float, float, float]:
         """World launcher anchor (wd, wx, wh). Same for both players; lane mapping picks left vs right table."""
         return LAUNCH_WD, RACK_CENTER_WX, LAUNCH_WH
 
-    def shooter_lane(player: int) -> int:
-        return 1 if player == 1 else 2
+    def shooter_lane(player: int) -> int: # shooter_lane is the lane of the shooter
+        return 1 if player == 1 else 2 # return 1 if the player is 1, otherwise 2
 
-    def launcher_screen_for_player(player: int) -> Tuple[float, float]:
-        wd0, wx0, wh0 = launch_world()
-        return world_to_screen_lane(wd0, wx0, wh0, shooter_lane(player), size[0], size[1])
+    def launcher_screen_for_player(player: int) -> Tuple[float, float]: # launcher_screen_for_player is the screen for the launcher
+        wd0, wx0, wh0 = launch_world() # wd0 is the distance of the launcher, wx0 is the x position of the launcher, wh0 is the height of the launcher
+        return world_to_screen_lane(wd0, wx0, wh0, shooter_lane(player), size[0], size[1]) # return the screen for the launcher
 
-    def active_launcher_screen() -> Tuple[float, float]:
-        return launcher_screen_for_player(game.current_player)
+    def active_launcher_screen() -> Tuple[float, float]: # active_launcher_screen is the screen for the active launcher
+        return launcher_screen_for_player(game.current_player) # return the screen for the active launcher
 
     def dist_to_active_launcher(pos: Tuple[int, int]) -> float:
         lx, ly = active_launcher_screen()
@@ -698,12 +772,11 @@ def run_pygame_gui() -> None:
     instr_start_rect = pygame.Rect(cx - 140, sh - 118, 280, 52) # instr_start_rect is the rectangle for the instruction start rect
 
     # this function is used to draw the instructions screen
-    def draw_instructions_screen() -> None: # draw the instructions screen
-        pygame.draw.rect(screen, (248, 246, 242), instr_panel, border_radius=18) # draw the instruction panel
-        pygame.draw.rect(screen, (58, 60, 72), instr_panel, width=2, border_radius=18) # draw the instruction panel border
-        title = font_instr_title.render("Cup Pong — How to play", True, (28, 30, 40)) # title is the title of the instruction screen
-        screen.blit(title, (cx - title.get_width() // 2, instr_panel.y + 22)) # draw the title of the instruction screen
-        screen.blit(title, (cx - title.get_width() // 2, instr_panel.y + 22)) # draw the title of the instruction screen
+    def draw_instructions_screen() -> None:
+        mp = pygame.mouse.get_pos()
+        _draw_filled_round_rect(screen, instr_panel, (248, 246, 242), (58, 60, 72), 2, 18)
+        title = font_instr_title.render("Cup Pong — How to play", True, (28, 30, 40))
+        screen.blit(title, (cx - title.get_width() // 2, instr_panel.y + 22))
         pad_x = 36
         max_text_w = max(160, instr_panel.width - 2 * pad_x)
         body_paragraphs = [
@@ -712,10 +785,8 @@ def run_pygame_gui() -> None:
             "Each player has two throws per round. If one player makes both throws in a round, the other player receives a penalty of one extra cup on their rack.",
             "Good luck, and have fun!",
         ]
-        wrapped = _wrap_instruction_paragraphs( # wrapped is the wrapped text for the instruction screen
-            font_instr_body, body_paragraphs, max_text_w # wrapped is the wrapped text for the instruction screen
-        )
-        line_gap = 26 # line_gap is the gap between the lines
+        wrapped = _wrap_instruction_paragraphs(font_instr_body, body_paragraphs, max_text_w)
+        line_gap = 26
         y = instr_panel.y + 78
         for line in wrapped:
             if line == "":
@@ -724,73 +795,77 @@ def run_pygame_gui() -> None:
             surf = font_instr_body.render(line, True, (55, 58, 72))
             screen.blit(surf, (instr_panel.x + pad_x, y))
             y += line_gap
-        mp = pygame.mouse.get_pos() # mp is the mouse position
-        hover = instr_start_rect.collidepoint(mp) # hover is True if the mouse is hovering over the instruction start rect
-        fill = (42, 140, 78) if not hover else (52, 168, 98) # fill is the color of the instruction start rect
-        pygame.draw.rect(screen, fill, instr_start_rect, border_radius=12) # draw the instruction start rect
-        pygame.draw.rect(screen, (18, 72, 44), instr_start_rect, width=2, border_radius=12) # draw the instruction start rect border
-        st = font_win_btn.render("Start game", True, (255, 255, 255)) # st is the text for the start game button
-        screen.blit(st, (instr_start_rect.centerx - st.get_width() // 2, instr_start_rect.centery - st.get_height() // 2)) # draw the start game button
-        hint_text = "Or press Enter / Space to begin" # hint_text is the text for the hint text if the mouse is not hovering over the instruction start rect
-        hint_lines = _wrap_text_to_width(font_instr_body, hint_text, max_text_w) # hint_lines is the wrapped text for the hint text if the mouse is not hovering over the instruction start rect
-        hy = instr_start_rect.bottom + 12 # hy is the y position of the hint text
+        _draw_labeled_round_button(
+            screen,
+            instr_start_rect,
+            font_win_btn,
+            "Start game",
+            (255, 255, 255),
+            (42, 140, 78),
+            (52, 168, 98),
+            (18, 72, 44),
+            2,
+            12,
+            mp,
+        )
+        hint_text = "Or press Enter / Space to begin"
+        hint_lines = _wrap_text_to_width(font_instr_body, hint_text, max_text_w)
+        hy = instr_start_rect.bottom + 12
         for hl in hint_lines:
-            hs = font_instr_body.render(hl, True, (120, 122, 132)) # hs is the text for the hint text if the mouse is not hovering over the instruction start rect  
-            screen.blit(hs, (cx - hs.get_width() // 2, hy)) # draw the hint text if the mouse is not hovering over the instruction start rect   
-            hy += line_gap - 4 # hy is the y position of the hint text
+            hs = font_instr_body.render(hl, True, (120, 122, 132))
+            screen.blit(hs, (cx - hs.get_width() // 2, hy))
+            hy += line_gap - 4
 
     # this function is used to reset the match from the ui
     def reset_match_from_ui() -> None:
-        nonlocal phase, sunk_anim_ticks, sunk_lane, opening_plane_done
-        nonlocal shot_preview_trail, shot_preview_outcome
-        nonlocal ball_wd, ball_wx, ball_wh, ball_vd, ball_vwx, ball_vh, flight_ticks
         game.reset()
-        phase = "IDLE"
-        sunk_anim_ticks = 0
-        sunk_lane = 1
-        opening_plane_done = False
-        shot_preview_trail = []
-        shot_preview_outcome = ""
+        session.phase = "IDLE"
+        session.sunk_anim_ticks = 0
+        session.sunk_lane = 1
+        session.opening_plane_done = False
+        session.shot_preview_trail.clear()
+        session.shot_preview_outcome = ""
         lw, lwx, lwh = launch_world()
-        ball_wd, ball_wx, ball_wh = lw, lwx, lwh
-        ball_vd = 0.0
-        ball_vwx = 0.0
-        ball_vh = 0.0
-        flight_ticks = 0
+        session.ball_wd, session.ball_wx, session.ball_wh = lw, lwx, lwh
+        session.ball_vd = 0.0
+        session.ball_vwx = 0.0
+        session.ball_vh = 0.0
+        session.flight_ticks = 0
 
     # this function is used to draw the win overlay
-    def draw_win_overlay() -> None: # draw the win overlay
-        nonlocal sw, sh # sw is the width of the screen, sh is the height of the screen
-        nonlocal win_panel # win_panel is the rectangle for the win panel
-        wn = game.winner # wn is the winner of the game
-        if wn is None: # if the winner is None, return
+    def draw_win_overlay() -> None:
+        wn = game.winner
+        if wn is None:
             return
-        title = f"Player {wn} wins!" # title is the title of the win overlay
-        sub = "Cleared the opponent's rack." # sub is the subtext of the win overlay
-        hint = "Play again  ·  R or Enter     |     Home  ·  H or button below" # hint is the hint text of the win overlay
-        ts = font_win_title.render(title, True, (28, 30, 38)) # ts is the text for the title of the win overlay
-        tsh = font_win_title.render(title, True, (200, 200, 205)) # tsh is the text for the title of the win overlay
-        tx = cx - ts.get_width() // 2 # tx is the x position of the title of the win overlay
-        ty = win_panel.y + 36 # ty is the y position of the title of the win overlay
-        screen.blit(tsh, (tx + 2, ty + 2)) # draw the title of the win overlay
-        screen.blit(ts, (tx, ty)) # draw the title of the win overlay   
-        dim = pygame.Surface((sw, sh), pygame.SRCALPHA) # dim is the surface for the dim
-        dim.fill((15, 18, 22, 175)) # dim is the surface for the dim
-        screen.blit(dim, (0, 0)) # draw the dim
-        pygame.draw.rect(screen, (252, 250, 248), win_panel, border_radius=20) # draw the win panel
-        pygame.draw.rect(screen, (55, 58, 68), win_panel, width=3, border_radius=20) # draw the win panel border
-        su = font_win_sub.render(sub, True, (80, 82, 92)) # su is the text for the subtext of the win overlay
-        screen.blit(su, (cx - su.get_width() // 2, ty + 62)) # draw the subtext of the win overlay
-        hi = font_win_sub.render(hint, True, (110, 112, 125)) # hi is the text for the hint text of the win overlay
-        screen.blit(hi, (cx - hi.get_width() // 2, ty + 96)) # draw the hint text of the win overlay
-        mp = pygame.mouse.get_pos() # mp is the mouse position
-        for rect, label in ((win_btn_play, "Play again"), (win_btn_home, "Home")): # for the win button play and the win button home
-            hover = rect.collidepoint(mp) # hover is True if the mouse is hovering over the win button play or the win button home
-            fill = (52, 118, 220) if not hover else (72, 138, 240) # fill is the color of the win button play or the win button home
-            pygame.draw.rect(screen, fill, rect, border_radius=12) # draw the win button play or the win button home
-            pygame.draw.rect(screen, (24, 48, 100), rect, width=2, border_radius=12) # draw the win button play or the win button home border
-            bt = font_win_btn.render(label, True, (255, 255, 255)) # bt is the text for the win button play or the win button home
-            screen.blit(bt, (rect.centerx - bt.get_width() // 2, rect.centery - bt.get_height() // 2)) # draw the win button play or the win button home
+        title = f"Player {wn} wins!"
+        sub = "Cleared the opponent's rack."
+        hint = "Play again  ·  R or Enter     |     Home  ·  H or button below"
+        ty = win_panel.y + 36
+        tx = cx - font_win_title.size(title)[0] // 2
+        _blit_text_with_drop_shadow(screen, font_win_title, title, (28, 30, 38), (200, 200, 205), (tx, ty))
+        dim = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        dim.fill((15, 18, 22, 175))
+        screen.blit(dim, (0, 0))
+        _draw_filled_round_rect(screen, win_panel, (252, 250, 248), (55, 58, 68), 3, 20)
+        su = font_win_sub.render(sub, True, (80, 82, 92))
+        screen.blit(su, (cx - su.get_width() // 2, ty + 62))
+        hi = font_win_sub.render(hint, True, (110, 112, 125))
+        screen.blit(hi, (cx - hi.get_width() // 2, ty + 96))
+        mp = pygame.mouse.get_pos()
+        for rect, label in ((win_btn_play, "Play again"), (win_btn_home, "Home")):
+            _draw_labeled_round_button(
+                screen,
+                rect,
+                font_win_btn,
+                label,
+                (255, 255, 255),
+                (52, 118, 220),
+                (72, 138, 240),
+                (24, 48, 100),
+                2,
+                12,
+                mp,
+            )
 
     def draw_floor() -> None: # draw the floor
         sw, sh = size[0], size[1] # sw is the width of the screen, sh is the height of the screen
@@ -813,11 +888,11 @@ def run_pygame_gui() -> None:
 
     def draw_cups_side() -> None: # draw the cups side  
         vis_scale = cup_r / 11.0 # vis_scale is the scale of the cups
-        front_wd = CUP_PLANE_WD - 3.0 * PYRAMID_ROW_WD  # depth (wd) of front row for perspective scaling
+        front_wd = RACK_FRONT_ROW_WD
         to_draw: List[Tuple[float, float, float, Tuple[int, int, int], bool, float, float]] = [] # to_draw is the list of the cups to draw
-        for placements, cups, fill, lane in ( # for the placements, cups, fill, and lane
-            (cup_placements_p2(), game.player_two_cups, cup_red_b, 1), # for the placements, cups, fill, and lane
-            (cup_placements_p1(), game.player_one_cups, cup_red_a, 2), # for the placements, cups, fill, and lane
+        for placements, cups, fill, lane in (
+            (cup_placements_for_side(2), game.player_two_cups, cup_red_b, 1), # for the placements, cups, fill, and lane
+            (cup_placements_for_side(1), game.player_one_cups, cup_red_a, 2), # for the placements, cups, fill, and lane
         ):
             for i, (wxi, wdi) in enumerate(placements): # for the i and the wxi and the wdi
                 if i >= len(cups): # if the i is greater than or equal to the length of the cups, break
@@ -837,73 +912,58 @@ def run_pygame_gui() -> None:
             else: # if the standing is False, draw the cup side profile
                 draw_cup_side_profile(screen, sx, sy, sc, fill, rim_edge, False, height_scale=hsc) # draw the cup side profile
 
-    phase = "IDLE" # phase is the phase of the game
-    sunk_anim_ticks = 0 # sunk_anim_ticks is the number of frames at 60 FPS before next shot after a sink
-    sunk_ball: Tuple[float, float, float] = (0.0, 0.0, 0.0) # sunk_ball is the ball that was sunk
-    sunk_lane = 1 # sunk_lane is the lane of the sunk cup
-    _lw0, _lwx0, _lwh0 = launch_world()  # world (wd, wx, wh) at launcher
-    ball_wd = _lw0  # world depth (wd)
-    ball_wx = _lwx0  # world lateral (wx)
-    ball_wh = _lwh0  # world height (wh)
-    ball_vd = 0.0  # depth velocity
-    ball_vwx = 0.0  # lateral velocity
-    ball_vh = 0.0  # height velocity
-    flight_ticks = 0  # reset shot integration step counter
-    opening_plane_done = False # opening_plane_done is True if the opening plane is done
-    running = True # running is True if the game is running
-    shot_preview_trail: List[Tuple[float, float, float]] = []
-    shot_preview_lane = 1 # shot_preview_lane is the lane of the shot preview
-    shot_preview_outcome = "" # shot_preview_outcome is the outcome of the shot preview
-    app_phase = "INSTRUCTIONS" # app_phase is the phase of the app
+    session = CupPongGuiSession()
+    _lw0, _lwx0, _lwh0 = launch_world()
+    session.ball_wd, session.ball_wx, session.ball_wh = _lw0, _lwx0, _lwh0
 
-    while running: # while the game is running
+    while session.running:
         for event in pygame.event.get(): # for the event
             if event.type == pygame.QUIT:
-                running = False # running is False if the game is not running
+                session.running = False # session.running is False if the game is not session.running
                 continue # continue to the next event
-            if app_phase == "INSTRUCTIONS":
+            if session.app_phase == "INSTRUCTIONS":
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE: # if the key is the escape key, set the running to False
-                        running = False # running is False if the game is not running
+                    if event.key == pygame.K_ESCAPE: # if the key is the escape key, set the session.running to False
+                        session.running = False # session.running is False if the game is not session.running
                     elif event.key in (
                         pygame.K_RETURN,
-                        pygame.K_SPACE, # if the key is the return key or the space key, set the app_phase to "PLAY"    
+                        pygame.K_SPACE, # if the key is the return key or the space key, set the session.app_phase to "PLAY"    
                     ):
-                        app_phase = "PLAY" # app_phase is the phase of the app
+                        session.app_phase = "PLAY" # session.app_phase is the session.phase of the app
                 elif (
-                    event.type == pygame.MOUSEBUTTONDOWN # if the type of the event is the mouse button down, set the app_phase to "PLAY"    
-                    and event.button == 1 # if the button is the left mouse button, set the app_phase to "PLAY"    
-                    and instr_start_rect.collidepoint(event.pos) # if the position of the event is in the instruction start rect, set the app_phase to "PLAY"    
+                    event.type == pygame.MOUSEBUTTONDOWN # if the type of the event is the mouse button down, set the session.app_phase to "PLAY"    
+                    and event.button == 1 # if the button is the left mouse button, set the session.app_phase to "PLAY"    
+                    and instr_start_rect.collidepoint(event.pos) # if the position of the event is in the instruction start rect, set the session.app_phase to "PLAY"    
                 ):
-                    app_phase = "PLAY" # app_phase is the phase of the app
+                    session.app_phase = "PLAY" # session.app_phase is the session.phase of the app
                 continue
-            if event.type == pygame.KEYDOWN: # if the type of the event is the key down, set the running to False
+            if event.type == pygame.KEYDOWN: # if the type of the event is the key down, set the session.running to False
                 if event.key == pygame.K_ESCAPE:
-                    running = False # running is False if the game is not running
+                    session.running = False # session.running is False if the game is not session.running
                 elif game.winner is not None:
                     if event.key in (pygame.K_h, pygame.K_HOME):
                         _return_to_hub()
                     elif event.key in (pygame.K_r, pygame.K_RETURN):
                         reset_match_from_ui()
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # if the type of the event is the mouse button down and the button is the left mouse button, set the running to False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # if the type of the event is the mouse button down and the button is the left mouse button, set the session.running to False
                 if game.winner is not None:
-                    if win_btn_play.collidepoint(event.pos): # if the position of the event is in the win button play, set the running to False
+                    if win_btn_play.collidepoint(event.pos): # if the position of the event is in the win button play, set the session.running to False
                         reset_match_from_ui() # reset the match from the ui
                     elif win_btn_home.collidepoint(event.pos):
                         _return_to_hub()
-                elif game.winner is None and phase == "IDLE":
-                    if dist_to_active_launcher(event.pos) <= LAUNCH_GRAB_RADIUS: # if the distance to the active launcher is less than or equal to the launch grab radius, set the phase to "SLING"
-                        phase = "SLING"
-            elif game.winner is None and phase == "SLING":
+                elif game.winner is None and session.phase == "IDLE":
+                    if dist_to_active_launcher(event.pos) <= LAUNCH_GRAB_RADIUS: # if the distance to the active launcher is less than or equal to the launch grab radius, set the session.phase to "SLING"
+                        session.phase = "SLING"
+            elif game.winner is None and session.phase == "SLING":
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     asx, asy = active_launcher_screen() # asx is the x position of the active launcher, asy is the y position of the active launcher
                     mx, my = float(event.pos[0]), float(event.pos[1]) # mx is the x position of the mouse, my is the y position of the mouse
                     dx, dy = mx - asx, my - asy
                     stretch = math.hypot(dx, dy) # stretch is the stretch of the sling
-                    if stretch < MIN_SLING_PULL: # if the stretch is less than the minimum sling pull, set the phase to "IDLE"
-                        phase = "IDLE" # phase is the phase of the game
-                        shot_preview_trail = [] # shot_preview_trail is the trail of the shot preview
-                        shot_preview_outcome = "" # shot_preview_outcome is the outcome of the shot preview
+                    if stretch < MIN_SLING_PULL: # if the stretch is less than the minimum sling pull, set the session.phase to "IDLE"
+                        session.phase = "IDLE" # session.phase is the session.phase of the game
+                        session.shot_preview_trail = [] # session.shot_preview_trail is the trail of the shot preview
+                        session.shot_preview_outcome = "" # session.shot_preview_outcome is the outcome of the shot preview
                     else:
                         cap = min(stretch, MAX_SLING_PULL) # cap is the cap of the sling
                         pfx = -dx / stretch  # horizontal component of pull direction (screen space)
@@ -923,68 +983,57 @@ def run_pygame_gui() -> None:
                         Dwd /= m3
                         Dwx /= m3
                         Dwh /= m3
-                        cp = game.current_player # cp is the current player
-                        lw, lwx, lwh = launch_world()  # world (wd, wx, wh) at launcher
-                        ball_wd, ball_wx, ball_wh = lw, lwx, lwh
-                        ball_vd = Dwd * sp  # depth velocity
-                        ball_vwx = Dwx * sp  # lateral velocity
-                        # Dwh from aim vector points "into table"; negate so negative Dwh -> upward wh (parabolic toss).
-                        ball_vh = -Dwh * sp  # height velocity
-                        if game.current_player == 1:
-                            opp_sim = game.player_two_cups
-                            pts_sim = cup_placements_p2() # pts_sim is the placements of the cups for player 2
-                        else:
-                            opp_sim = game.player_one_cups
-                            pts_sim = cup_placements_p1() # pts_sim is the placements of the cups for player 1
-                        shot_preview_trail, shot_preview_outcome = _simulate_shot_trail(lw, lwx, lwh, ball_vd, ball_vwx, ball_vh, opp_sim, pts_sim, cup_r) # shot_preview_trail is the trail of the shot preview, shot_preview_outcome is the outcome of the shot preview
-                        shot_preview_lane = 1 if cp == 1 else 2 # shot_preview_lane is the lane of the shot preview if the current player is 1, otherwise 2
-                        phase = "BALL" # phase is the phase of the game
-                        flight_ticks = 0  # reset shot integration step counter
-                        opening_plane_done = False # opening_plane_done is True if the opening plane is done
+                        lw, lwx, lwh = launch_world()
+                        session.ball_wd, session.ball_wx, session.ball_wh = lw, lwx, lwh
+                        session.ball_vd = Dwd * sp
+                        session.ball_vwx = Dwx * sp
+                        session.ball_vh = -Dwh * sp  # negate aim so toss goes up in world wh
+                        opp_sim, pts_sim = opponent_rack_for_shooter(game.current_player)
+                        session.shot_preview_trail, session.shot_preview_outcome = _simulate_shot_trail(
+                            lw, lwx, lwh, session.ball_vd, session.ball_vwx, session.ball_vh, opp_sim, pts_sim, cup_r
+                        )
+                        session.shot_preview_lane = shooter_lane(game.current_player)
+                        session.phase = "BALL" # session.phase is the session.phase of the game
+                        session.flight_ticks = 0  # reset shot integration step counter
+                        session.opening_plane_done = False # session.opening_plane_done is True if the opening plane is done
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                    phase = "IDLE" # phase is the phase of the game
-                    shot_preview_trail = [] # shot_preview_trail is the trail of the shot preview
-                    shot_preview_outcome = "" # shot_preview_outcome is the outcome of the shot preview
+                    session.phase = "IDLE" # session.phase is the session.phase of the game
+                    session.shot_preview_trail = [] # session.shot_preview_trail is the trail of the shot preview
+                    session.shot_preview_outcome = "" # session.shot_preview_outcome is the outcome of the shot preview
 
-        if app_phase == "INSTRUCTIONS":
+        if session.app_phase == "INSTRUCTIONS":
             draw_floor() # draw the floor
             draw_instructions_screen() # draw the instructions screen
             pygame.display.flip()
             clock.tick(60) # tick the clock
             continue
 
-        if phase == "SUNK":
-            sunk_anim_ticks -= 1 # sunk_anim_ticks is the number of frames at 60 FPS before next shot after a sink
-            if sunk_anim_ticks <= 0: # if the sunk_anim_ticks is less than or equal to 0, set the phase to "IDLE"
-                phase = "IDLE" # phase is the phase of the game
+        if session.phase == "SUNK":
+            session.sunk_anim_ticks -= 1 # session.sunk_anim_ticks is the number of frames at 60 FPS before next shot after a sink
+            if session.sunk_anim_ticks <= 0: # if the session.sunk_anim_ticks is less than or equal to 0, set the session.phase to "IDLE"
+                session.phase = "IDLE" # session.phase is the session.phase of the game
 
-        if phase == "BALL" and game.winner is None:
-            rack_front_wd = CUP_PLANE_WD - 3.0 * PYRAMID_ROW_WD  # depth (wd) of front cup row
-            prev_wd = ball_wd
-            prev_wx = ball_wx  # previous world lateral (wx)
-            prev_wh = ball_wh  # previous world height (wh)
+        if session.phase == "BALL" and game.winner is None:
+            prev_wd = session.ball_wd
+            prev_wx = session.ball_wx  # previous world lateral (wx)
+            prev_wh = session.ball_wh  # previous world height (wh)
 
-            ball_vh -= GRAVITY_WORLD  # gravity acts on world height (wh)
-            ball_wd += ball_vd
-            ball_wx += ball_vwx
-            ball_wh += ball_vh
-            flight_ticks += 1  # physics steps this shot (guarded by max to avoid infinite loop)
+            session.ball_vh -= GRAVITY_WORLD  # gravity acts on world height (wh)
+            session.ball_wd += session.ball_vd
+            session.ball_wx += session.ball_vwx
+            session.ball_wh += session.ball_vh
+            session.flight_ticks += 1  # physics steps this shot (guarded by max to avoid infinite loop)
 
-            if ball_wh < 0.0: # if the ball_wh is less than 0, set the ball_wh to 0
-                ball_wh = 0.0 # ball_wh is the height of the ball
-                if ball_vh < 0.0: # if the ball_vh is less than 0, set the ball_vh to 0
-                    ball_vh *= -0.38
-                if abs(ball_vh) < 0.55:
-                    ball_vh = 0.0
-                ball_vd *= 0.86  # felt friction damping on depth motion
-                ball_vwx *= 0.85  # felt friction damping on lateral motion
+            if session.ball_wh < 0.0: # if the session.ball_wh is less than 0, set the session.ball_wh to 0
+                session.ball_wh = 0.0 # session.ball_wh is the height of the ball
+                if session.ball_vh < 0.0: # if the session.ball_vh is less than 0, set the session.ball_vh to 0
+                    session.ball_vh *= -0.38
+                if abs(session.ball_vh) < 0.55:
+                    session.ball_vh = 0.0
+                session.ball_vd *= 0.86  # felt friction damping on depth motion
+                session.ball_vwx *= 0.85  # felt friction damping on lateral motion
 
-            if game.current_player == 1: # if the current player is 1, set the opp to the cups for player 2
-                opp = game.player_two_cups # opp is the cups for player 2
-                opp_pts = cup_placements_p2() # opp_pts is the placements of the cups for player 2
-            else: # if the current player is not 1, set the opp to the cups for player 1
-                opp = game.player_one_cups # opp is the cups for player 1
-                opp_pts = cup_placements_p1() # opp_pts is the placements of the cups for player 1
+            opp, opp_pts = opponent_rack_for_shooter(game.current_player)
 
             rim_wh = cup_r * CUP_RIM_PLANE_WH_FRAC  # world wh where rim opening is tested
             sink_r = cup_r * CUP_TOP_SINK_FRAC # sink_r is the radius of the sink
@@ -993,28 +1042,28 @@ def run_pygame_gui() -> None:
 
             # Descending through rim-height plane: within cup-top radius of a standing cup = sink (closest cup).
             if (
-                not opening_plane_done
-                and prev_wh > rim_wh >= ball_wh
-                and ball_vh < -0.06
+                not session.opening_plane_done
+                and prev_wh > rim_wh >= session.ball_wh
+                and session.ball_vh < -0.06
             ):
-                den = ball_wh - prev_wh # den is the difference in the height of the ball and the previous height of the ball
+                den = session.ball_wh - prev_wh # den is the difference in the height of the ball and the previous height of the ball
                 if abs(den) > 1e-8:
                     tr = (rim_wh - prev_wh) / den  # fraction along segment where ball crosses rim height
                     if 0.0 <= tr <= 1.0:
-                        opening_plane_done = True
-                        cross_wx = prev_wx + tr * (ball_wx - prev_wx)  # lateral (wx) at rim crossing
-                        cd = prev_wd + tr * (ball_wd - prev_wd)  # depth (wd) at rim crossing
-                        if cd < rack_front_wd - 32.0:
+                        session.opening_plane_done = True
+                        cross_wx = prev_wx + tr * (session.ball_wx - prev_wx)  # lateral (wx) at rim crossing
+                        cd = prev_wd + tr * (session.ball_wd - prev_wd)  # depth (wd) at rim crossing
+                        if cd < RACK_FRONT_ROW_WD - 32.0:
                             game.finish_throw(
                                 None, miss_detail="short — ball never reached the cup row" # miss_detail is the detail of the miss
                             )
-                            phase = "IDLE" # phase is the phase of the game
+                            session.phase = "IDLE" # session.phase is the session.phase of the game
                             shot_done = True
                         elif cd > CUP_PLANE_WD + 48.0:
                             game.finish_throw(
                                 None, miss_detail="long — past the cup row in depth"
                             )
-                            phase = "IDLE"
+                            session.phase = "IDLE"
                             shot_done = True
                         else:
                             best_i: Optional[int] = None # best_i is the index of the best cup
@@ -1029,34 +1078,34 @@ def run_pygame_gui() -> None:
                             if best_i is not None:
                                 game.finish_throw(best_i) # game.finish_throw is the function to finish the throw
                                 sunk_wxi, sunk_wdi = opp_pts[best_i]  # (wx, wd) cup center in world space
-                                sunk_ball = (sunk_wdi, sunk_wxi, cup_r * 0.42) # sunk_ball is the ball that was sunk
-                                sunk_lane = 1 if game.current_player == 1 else 2 # sunk_lane is the lane of the sunk cup if the current player is 1, otherwise 2
-                                sunk_anim_ticks = SUNK_ANIM_FRAMES # sunk_anim_ticks is the number of frames at 60 FPS before the sunk animation
-                                phase = "SUNK" # phase is the phase of the game
+                                session.sunk_ball = (sunk_wdi, sunk_wxi, cup_r * 0.42) # session.sunk_ball is the ball that was sunk
+                                session.sunk_lane = shooter_lane(game.current_player)
+                                session.sunk_anim_ticks = SUNK_ANIM_FRAMES # session.sunk_anim_ticks is the number of frames at 60 FPS before the sunk animation
+                                session.phase = "SUNK" # session.phase is the session.phase of the game
                                 shot_done = True # shot_done is True if the shot is done
                             else:
                                 min_d = min((math.hypot(cd - wdi, cross_wx - wxi) for i, (wxi, wdi) in enumerate(opp_pts) if i < len(opp) and opp[i]), default=999.0) # min_d is the minimum distance to the cups
-                                if min_d > sink_r + 22.0: # if the minimum distance to the cups is greater than the sink radius plus 22.0, set the phase to "IDLE"
+                                if min_d > sink_r + 22.0: # if the minimum distance to the cups is greater than the sink radius plus 22.0, set the session.phase to "IDLE"
                                     game.finish_throw(
                                         None, miss_detail="past the cups (opening plane)" # miss_detail is the detail of the miss
                                     )
                                 else:
                                     game.finish_throw(None, miss_detail="between cups at rim height") # miss_detail is the detail of the miss
-                                phase = "IDLE" # phase is the phase of the game
+                                session.phase = "IDLE" # session.phase is the session.phase of the game
                                 shot_done = True # shot_done is True if the shot is done
 
-            if not shot_done and ball_wh <= 0.08 and abs(ball_vh) < 0.52: # if the ball_wh is less than or equal to 0.08 and the absolute value of the ball_vh is less than 0.52, set the phase to "IDLE"
-                spd_xy = math.hypot(ball_vd, ball_vwx)  # speed in felt plane (depth + lateral)
+            if not shot_done and session.ball_wh <= 0.08 and abs(session.ball_vh) < 0.52: # if the session.ball_wh is less than or equal to 0.08 and the absolute value of the session.ball_vh is less than 0.52, set the session.phase to "IDLE"
+                spd_xy = math.hypot(session.ball_vd, session.ball_vwx)  # speed in felt plane (depth + lateral)
                 if spd_xy < 3.05:
                     detail: Optional[str] = None # detail is the detail of the miss             
-                    if ball_wd < rack_front_wd - 42.0:
+                    if session.ball_wd < RACK_FRONT_ROW_WD - 42.0:
                         detail = "short — stopped on the felt before the rack" # detail is the detail of the miss
-                    elif ball_wd > CUP_PLANE_WD + 42.0:
+                    elif session.ball_wd > CUP_PLANE_WD + 42.0:
                         detail = "long — rolled past the cups on the felt"
-                    elif rack_front_wd - 28.0 < ball_wd < CUP_PLANE_WD + 32.0:
+                    elif RACK_FRONT_ROW_WD - 28.0 < session.ball_wd < CUP_PLANE_WD + 32.0:
                         min_drack = min(
                             (
-                                math.hypot(ball_wd - wdi, ball_wx - wxi) # min_drack is the minimum distance to the cups
+                                math.hypot(session.ball_wd - wdi, session.ball_wx - wxi) # min_drack is the minimum distance to the cups
                                 for i, (wxi, wdi) in enumerate(opp_pts)
                                 if i < len(opp) and opp[i]
                             ),
@@ -1066,29 +1115,29 @@ def run_pygame_gui() -> None:
                             detail = "wide — on the felt but outside the cups" # detail is the detail of the miss
                     if detail is not None:
                         game.finish_throw(None, miss_detail=detail) # game.finish_throw is the function to finish the throw
-                        phase = "IDLE" # phase is the phase of the game
+                        session.phase = "IDLE" # session.phase is the session.phase of the game
                         shot_done = True
 
             if not shot_done:
                 miss_air: Optional[str] = None # miss_air is the detail of the miss
-                if ball_wd > TABLE_DEPTH + 130.0:
+                if session.ball_wd > TABLE_DEPTH + 130.0:
                     miss_air = "long — off the end of the table" # miss_air is the detail of the miss
-                elif ball_wd > CUP_PLANE_WD + 95.0:
+                elif session.ball_wd > CUP_PLANE_WD + 95.0:
                     miss_air = "long — past the cups" # miss_air is the detail of the miss
-                elif ball_wd < -42.0:
+                elif session.ball_wd < -42.0:
                     miss_air = "behind you — not toward the rack" # miss_air is the detail of the miss
-                elif abs(ball_wx) > 148.0:
+                elif abs(session.ball_wx) > 148.0:
                     miss_air = "wide — far off to the side" # miss_air is the detail of the miss
-                elif ball_wh > 410.0:
+                elif session.ball_wh > 410.0:
                     miss_air = "too high" # miss_air is the detail of the miss
-                elif ball_wh < -95.0:
+                elif session.ball_wh < -95.0:
                     miss_air = "dropped out of play" # miss_air is the detail of the miss
-                elif flight_ticks > 640:
+                elif session.flight_ticks > 640:
                     miss_air = "timed out" # miss_air is the detail of the miss
 
                 if miss_air is not None:
                     game.finish_throw(None, miss_detail=miss_air) # game.finish_throw is the function to finish the throw
-                    phase = "IDLE" # phase is the phase of the game
+                    session.phase = "IDLE" # session.phase is the session.phase of the game
 
         draw_floor() # draw the floor
         draw_table() # draw the table
@@ -1112,14 +1161,11 @@ def run_pygame_gui() -> None:
         if game.winner is None:
             aim = "Left table" if game.current_player == 1 else "Right table" # aim is the aim of the current player
             turn_txt = f"Player {game.current_player} — {aim}  ·  Throws {game.attempts_left}" # turn_txt is the text of the turn
-            tw = font_lg.render(turn_txt, True, turn_text) # tw is the text of the turn
-            tsh = font_lg.render(turn_txt, True, turn_shadow) # tsh is the text of the turn
-            tx = size[0] // 2 - tw.get_width() // 2 # tx is the x position of the text
-            ty = 14 # ty is the y position of the text
-            screen.blit(tsh, (tx + 2, ty + 2)) # draw the text
-            screen.blit(tw, (tx, ty)) # draw the text
+            tx = size[0] // 2 - font_lg.size(turn_txt)[0] // 2
+            ty = 14
+            _blit_text_with_drop_shadow(screen, font_lg, turn_txt, turn_text, turn_shadow, (tx, ty))
 
-        if game.winner is None and phase == "SLING":
+        if game.winner is None and session.phase == "SLING":
             asx, asy = active_launcher_screen() # asx is the x position of the active launcher, asy is the y position of the active launcher
             mx, my = pygame.mouse.get_pos() # mx is the x position of the mouse, my is the y position of the mouse
             dx, dy = float(mx - asx), float(my - asy) # dx is the difference in the x position of the mouse and the x position of the active launcher, dy is the difference in the y position of the mouse and the y position of the active launcher
@@ -1135,30 +1181,30 @@ def run_pygame_gui() -> None:
             pygame.draw.circle(screen, ball_white, (int(bx), int(by)), br) # draw the ball white
             pygame.draw.circle(screen, ball_outline, (int(bx), int(by)), br, 2) # draw the ball outline
 
-        if phase == "BALL":
-            if shot_preview_trail:
+        if session.phase == "BALL":
+            if session.shot_preview_trail:
                 hit_col = (200, 255, 220) # hit_col is the color of the hit
                 miss_col = (255, 210, 160) # miss_col is the color of the miss
-                pcol = hit_col if shot_preview_outcome == "hit" else miss_col
+                pcol = hit_col if session.shot_preview_outcome == "hit" else miss_col
                 pts_scr: List[Tuple[int, int]] = [] # pts_scr is the list of points on the screen
                 step = 1 # step is the step of the trail
-                if len(shot_preview_trail) > 360:
+                if len(session.shot_preview_trail) > 360:
                     step = 2 # step is the step of the trail
-                for ti in range(0, len(shot_preview_trail), step):
-                    twd, twx, twh = shot_preview_trail[ti]  # world sample (wd, wx, wh)
+                for ti in range(0, len(session.shot_preview_trail), step):
+                    twd, twx, twh = session.shot_preview_trail[ti]  # world sample (wd, wx, wh)
                     sx, sy = world_to_screen_lane(
-                        twd, twx, twh, shot_preview_lane, size[0], size[1] # sx is the x position of the trail, sy is the y position of the trail
+                        twd, twx, twh, session.shot_preview_lane, size[0], size[1] # sx is the x position of the trail, sy is the y position of the trail
                     )
                     pts_scr.append((int(sx), int(sy)))
                 if len(pts_scr) >= 2:
                     pygame.draw.lines(screen, pcol, False, pts_scr, 2) # draw the lines
             bl = shooter_lane(game.current_player) # bl is the lane of the shooter
-            bx, by = world_to_screen_lane(ball_wd, ball_wx, ball_wh, bl, size[0], size[1]) # bx is the x position of the ball, by is the y position of the ball
+            bx, by = world_to_screen_lane(session.ball_wd, session.ball_wx, session.ball_wh, bl, size[0], size[1]) # bx is the x position of the ball, by is the y position of the ball
             pygame.draw.circle(screen, ball_white, (int(bx), int(by)), BALL_RADIUS) # draw the ball white
             pygame.draw.circle(screen, ball_outline, (int(bx), int(by)), BALL_RADIUS, 2) # draw the ball outline    
-        elif phase == "SUNK":
-            sd, sxw, swh = sunk_ball
-            bx, by = world_to_screen_lane(sd, sxw, swh, sunk_lane, size[0], size[1]) # bx is the x position of the ball, by is the y position of the ball
+        elif session.phase == "SUNK":
+            sd, sxw, swh = session.sunk_ball
+            bx, by = world_to_screen_lane(sd, sxw, swh, session.sunk_lane, size[0], size[1]) # bx is the x position of the ball, by is the y position of the ball
             pygame.draw.circle(screen, ball_white, (int(bx), int(by)), BALL_RADIUS) # draw the ball white
             pygame.draw.circle(screen, ball_outline, (int(bx), int(by)), BALL_RADIUS, 2) # draw the ball outline    
 
