@@ -1,6 +1,7 @@
 # this is the code for the Cup Pong game! The idea is to have this script launch when the user presses the "Cup Pong" button on the home page
 # we wanted to have a separate script for each game that can then go back to the home page at any time to switch between games
 # having the games run as separate scripts creates more ease with the code --> site is easier to then navigate
+# Coded by Madison Sineff and Pearl Chia, Debugged by Pearl Chia
 
 from __future__ import annotations
 

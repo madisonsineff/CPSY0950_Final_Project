@@ -1,3 +1,8 @@
+# this is the code for the Filler game! The idea is to have this script launch when the user presses the "Filler" button on the home page
+# we wanted to have a separate script for each game that can then go back to the home page at any time to switch between games
+# having the games run as separate scripts creates more ease with the code --> site is easier to then navigate
+# Coded by Pearl Chia, debugged by Madison Sineff
+
 """Filler — GamePigeon-style color flood game for 2 players on the same keyboard.
 
 Player 1 starts at the BOTTOM-LEFT corner.

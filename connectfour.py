@@ -1,3 +1,8 @@
+# this is the code for the Connect Four game! The idea is to have this script launch when the user presses the "Connect Four" button on the home page
+# we wanted to have a separate script for each game that can then go back to the home page at any time to switch between games
+# having the games run as separate scripts creates more ease with the code --> site is easier to then navigate
+# Coded by Pearl Chia, Debugged by Madison Sineff
+
 """Connect Four — clean redesign with audio, hover indicator, and better instructions.
 
 Two players take turns clicking (or using keys 1-7) to drop a piece into a column.
