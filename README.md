@@ -64,7 +64,7 @@ No additional datasets or data files are required for this project. All images a
   Background image for the Cup Pong game -- not used.
 
 - `cuppongbackground.webp`  
-  Additional background image for the Cup Pong game -- used!
+  Additional background image for the Cup Pong game -- not used!
 
 ### Other Files
 
@@ -94,37 +94,6 @@ python GamePython_MAINHUB.py
 From the main hub, choose the game you want to play.
 
 General controls depend on the game, but may include:
-
 - Mouse clicks to choose buttons, colors, pieces, or targets
 - Keyboard input for word-based games
 - On-screen game instructions and feedback
-
-## Notes for Running
-
-All Python files, images, and audio files should stay in the same project folder unless the code is updated to use different file paths.
-
-If an image or audio file is missing, the game may not load correctly. Make sure the full repository is downloaded before running the program.
-
-If the program does not run, check that Python and Pygame are installed correctly and that the command is being run from inside the project folder.
-
-## Data Accessibility
-
-This project does not require outside datasets for analysis. All files needed to run the project are included in the GitHub repository.
-
-## Repository Access
-
-The GitHub repository for this project should be public so that the instructors and TAs can access the code, README, image files, audio files, and any other files needed to run the project.
-
-## AI Usage
-
-AI tools, including Cursor, were used during the development process to help with debugging, understanding errors, organizing code, and learning more about Python and Pygame. AI was used as a support tool, not as a replacement for our own coding, testing, and understanding.
-
-A separate AI usage report is included with the final project submission.
-
-## Credits
-
-This project was created by Pearl Chia and Madison Sineff for CPSY0950.
-
-Pygame tutorials were used as a reference while learning how to create interactive games in Python:
-
-https://www.pygame.org/wiki/tutorials
