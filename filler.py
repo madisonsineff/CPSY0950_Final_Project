@@ -137,8 +137,8 @@ def run_game():
     TOP_H    = 60
     BOT_H    = 100
 
-    WIN_W    = SIDE_W + BOARD_PX + SIDE_W
-    WIN_H    = TOP_H + BOARD_PY + BOT_H
+    WIN_W    = 1200
+    WIN_H    = 800
 
     BOARD_X  = SIDE_W
     BOARD_Y  = TOP_H
