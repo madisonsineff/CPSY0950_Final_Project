@@ -28,7 +28,7 @@ No additional datasets or data files are required for this project. All images a
   Audio file used for the Connect Four game.
 
 - `connect4background.jpg`  
-  Background image for the Connect Four game -- not used.
+  Background image for the Connect Four game.
 
 ### Anagrams / Word Hunt Files
 
@@ -39,7 +39,7 @@ No additional datasets or data files are required for this project. All images a
   Audio file used for the Anagrams/Word Hunt game.
 
 - `wordhuntbackground.png`  
-  Background image for the Anagrams/Word Hunt game -- not used.
+  Background image for the Anagrams/Word Hunt game.
 
 ### Filler Files
 
@@ -50,7 +50,7 @@ No additional datasets or data files are required for this project. All images a
   Audio file used for the Filler game.
 
 - `filler_background.jpg`  
-  Background image for the Filler game -- not used.
+  Background image for the Filler game .
 
 ### Cup Pong Files
 
@@ -61,14 +61,14 @@ No additional datasets or data files are required for this project. All images a
   Audio file used for the Cup Pong game.
 
 - `cup_pong_background.webp`  
-  Background image for the Cup Pong game -- not used.
+  Extra background image for the Cup Pong game -- not used.
 
 - `cuppongbackground.webp`  
-  Additional background image for the Cup Pong game -- not used!
+  Additional background image for the Cup Pong game.
 
 ### Other Files
 
-- `README.md`  
+- `README.md` (current file!) 
   Project documentation. This file explains the project, requirements, file structure, and instructions for running the code.
 
 - `.gitignore`  
@@ -97,3 +97,5 @@ General controls depend on the game, but may include:
 - Mouse clicks to choose buttons, colors, pieces, or targets
 - Keyboard input for word-based games
 - On-screen game instructions and feedback
+
+## Have fun!
