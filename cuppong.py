@@ -622,7 +622,7 @@ def _wrap_instruction_paragraphs(
 # this function is used to run the pygame gui
 def run_pygame_gui() -> None:
     pygame.init() # initialize pygame
-    size = (1200, 80) # size is the size of the screen
+    size = (1200, 800) # size is the size of the screen
     screen = pygame.display.set_mode(size, pygame.HWSURFACE | pygame.DOUBLEBUF) # screen is the screen object
     pygame.display.set_caption("Cup Pong") # set the caption of the screen
     clock = pygame.time.Clock() # clock is the clock object
