@@ -128,40 +128,41 @@ def run_game():
 
     hub = pathlib.Path(__file__).resolve().parent / "GamePython_MAINHUB.py"
 
-    CELL     = 58
-    GAP      = 3
-    BOARD_PX = COLS * (CELL + GAP) + GAP
-    BOARD_PY = ROWS * (CELL + GAP) + GAP
+    # ── window is fixed 1200x800 to match all other games ──
+    WIN_W = 1200
+    WIN_H = 800
 
-    SIDE_W   = 130
-    TOP_H    = 60
-    BOT_H    = 100
+    # ── board sizing: fill most of the window nicely ──
+    CELL     = 74
+    GAP      = 4
+    BOARD_PX = COLS * (CELL + GAP) + GAP   # 8*78+4 = 628
+    BOARD_PY = ROWS * (CELL + GAP) + GAP   # 628
 
-    WIN_W    = 1200
-    WIN_H    = 800
+    # center the board horizontally, leave room top/bottom for UI
+    BOARD_X  = (WIN_W - BOARD_PX) // 2     # ~286
+    BOARD_Y  = 90                           # below title
 
-    BOARD_X  = SIDE_W
-    BOARD_Y  = TOP_H
+    SIDE_W   = BOARD_X                     # panel width each side = same as left offset
 
     screen = pygame.display.set_mode((WIN_W, WIN_H), pygame.HWSURFACE | pygame.DOUBLEBUF)
     pygame.display.set_caption("Filler")
     clock = pygame.time.Clock()
 
-    font_title       = pygame.font.SysFont("chalkboard", 34, bold=True)
-    font_label       = pygame.font.SysFont("optima", 21, bold=True)
-    font_score       = pygame.font.SysFont("chalkboard", 27, bold=True)
-    font_small       = pygame.font.SysFont("optima", 17)
-    font_hint        = pygame.font.SysFont("optima", 14)
-    font_instr       = pygame.font.SysFont("optima", 19)
-    font_instr_bold  = pygame.font.SysFont("optima", 20, bold=True)
+    font_title      = pygame.font.SysFont("chalkboard", 42, bold=True)
+    font_label      = pygame.font.SysFont("optima", 24, bold=True)
+    font_score      = pygame.font.SysFont("chalkboard", 34, bold=True)
+    font_small      = pygame.font.SysFont("optima", 20)
+    font_hint       = pygame.font.SysFont("optima", 16)
+    font_instr      = pygame.font.SysFont("optima", 21)
+    font_instr_bold = pygame.font.SysFont("optima", 22, bold=True)
 
     board, owned, turn, game_over, winner = new_game()
     app_phase = "INSTRUCTIONS"
 
-    panel_w = min(580, WIN_W - 40)
-    panel_h = min(400, WIN_H - 40)
-    panel   = pygame.Rect((WIN_W - panel_w)//2, (WIN_H - panel_h)//2, panel_w, panel_h)
-    start_btn = pygame.Rect(panel.centerx - 110, panel.bottom - 58, 220, 44)
+    panel_w   = 680
+    panel_h   = 440
+    panel     = pygame.Rect((WIN_W-panel_w)//2, (WIN_H-panel_h)//2, panel_w, panel_h)
+    start_btn = pygame.Rect(panel.centerx-120, panel.bottom-66, 240, 48)
 
     def draw_instructions():
         screen.fill((28, 32, 46))
@@ -169,9 +170,9 @@ def run_game():
         pygame.draw.rect(screen, (30, 44, 88),    panel, width=3, border_radius=14)
 
         t = font_title.render("How to Play — Filler", True, (20, 25, 55))
-        screen.blit(t, (panel.centerx - t.get_width()//2, panel.y + 14))
+        screen.blit(t, (panel.centerx - t.get_width()//2, panel.y + 16))
         pygame.draw.line(screen, (180,185,210),
-                         (panel.x+24, panel.y+50), (panel.right-24, panel.y+50), 1)
+                         (panel.x+24, panel.y+58), (panel.right-24, panel.y+58), 1)
 
         sections = [
             ("bold", "Goal"),
@@ -191,16 +192,16 @@ def run_game():
             ("text", "H = hub   |   R = restart   |   Esc = quit"),
         ]
 
-        y = panel.y + 58
+        y = panel.y + 66
         for kind, text in sections:
             if kind == "gap":
-                y += 5
+                y += 6
                 continue
             fnt   = font_instr_bold if kind == "bold" else font_instr
             color = (20, 25, 55)    if kind == "bold" else (55, 60, 90)
             s = fnt.render(text, True, color)
-            screen.blit(s, (panel.x + 24, y))
-            y += 23
+            screen.blit(s, (panel.x + 28, y))
+            y += 26
 
         mp = pygame.mouse.get_pos()
         hover = start_btn.collidepoint(mp)
@@ -219,68 +220,80 @@ def run_game():
     def draw_game():
         screen.fill((22, 26, 38))
 
+        # title
         t = font_title.render("Filler", True, (240,240,255))
-        screen.blit(t, (WIN_W//2 - t.get_width()//2, 12))
+        screen.blit(t, (WIN_W//2 - t.get_width()//2, 18))
 
+        # board cells
         for r in range(ROWS):
             for c in range(COLS):
                 rect  = cell_rect(r, c)
                 color = COLORS[board[r][c]]
                 owner = owned[r][c]
-                pygame.draw.rect(screen, color, rect, border_radius=5)
+                pygame.draw.rect(screen, color, rect, border_radius=6)
                 if owner == P1:
-                    pygame.draw.rect(screen, (255,225,120), rect, width=2, border_radius=5)
+                    pygame.draw.rect(screen, (255,225,120), rect, width=3, border_radius=6)
                 elif owner == P2:
-                    pygame.draw.rect(screen, (130,205,255), rect, width=2, border_radius=5)
+                    pygame.draw.rect(screen, (130,205,255), rect, width=3, border_radius=6)
 
         p1_count = count_owned(owned, P1)
         p2_count = count_owned(owned, P2)
         total    = ROWS * COLS
 
-        px1 = SIDE_W // 2
+        # ── left panel: Player 1 ──
+        px1 = BOARD_X // 2
         lbl = font_label.render("Player 1", True, (255,220,120))
-        screen.blit(lbl, (px1 - lbl.get_width()//2, BOARD_Y + 8))
+        screen.blit(lbl, (px1 - lbl.get_width()//2, BOARD_Y + 20))
         sc = font_score.render(str(p1_count), True, (255,255,255))
-        screen.blit(sc, (px1 - sc.get_width()//2, BOARD_Y + 32))
+        screen.blit(sc, (px1 - sc.get_width()//2, BOARD_Y + 52))
         p1c = current_color(board, owned, P1)
-        pygame.draw.circle(screen, COLORS[p1c], (px1, BOARD_Y + 76), 13)
-        pygame.draw.circle(screen, (255,225,120), (px1, BOARD_Y + 76), 13, 2)
+        pygame.draw.circle(screen, COLORS[p1c], (px1, BOARD_Y + 110), 18)
+        pygame.draw.circle(screen, (255,225,120), (px1, BOARD_Y + 110), 18, 3)
+        cur_lbl = font_hint.render("current", True, (180,180,200))
+        screen.blit(cur_lbl, (px1 - cur_lbl.get_width()//2, BOARD_Y + 134))
 
-        px2 = BOARD_X + BOARD_PX + SIDE_W // 2
+        # ── right panel: Player 2 ──
+        px2 = BOARD_X + BOARD_PX + (WIN_W - BOARD_X - BOARD_PX) // 2
         lbl2 = font_label.render("Player 2", True, (130,205,255))
-        screen.blit(lbl2, (px2 - lbl2.get_width()//2, BOARD_Y + 8))
+        screen.blit(lbl2, (px2 - lbl2.get_width()//2, BOARD_Y + 20))
         sc2 = font_score.render(str(p2_count), True, (255,255,255))
-        screen.blit(sc2, (px2 - sc2.get_width()//2, BOARD_Y + 32))
+        screen.blit(sc2, (px2 - sc2.get_width()//2, BOARD_Y + 52))
         p2c = current_color(board, owned, P2)
-        pygame.draw.circle(screen, COLORS[p2c], (px2, BOARD_Y + 76), 13)
-        pygame.draw.circle(screen, (130,205,255), (px2, BOARD_Y + 76), 13, 2)
+        pygame.draw.circle(screen, COLORS[p2c], (px2, BOARD_Y + 110), 18)
+        pygame.draw.circle(screen, (130,205,255), (px2, BOARD_Y + 110), 18, 3)
+        cur_lbl2 = font_hint.render("current", True, (180,180,200))
+        screen.blit(cur_lbl2, (px2 - cur_lbl2.get_width()//2, BOARD_Y + 134))
 
-        sw      = 34
-        sw_gap  = 7
+        # ── color swatches below board ──
+        sw      = 44
+        sw_gap  = 10
         total_w = NUM_COLORS * sw + (NUM_COLORS-1) * sw_gap
         sw_x0   = WIN_W//2 - total_w//2
-        sw_y    = BOARD_Y + BOARD_PY + 10
+        sw_y    = BOARD_Y + BOARD_PY + 16
 
         for i in range(NUM_COLORS):
             sx   = sw_x0 + i*(sw+sw_gap)
             rect = pygame.Rect(sx, sw_y, sw, sw)
-            pygame.draw.rect(screen, COLORS[i], rect, border_radius=5)
+            pygame.draw.rect(screen, COLORS[i], rect, border_radius=6)
             if not game_over:
                 cur_c = current_color(board, owned, turn)
-                bw = 3 if i == cur_c else 1
+                bw = 4 if i == cur_c else 1
                 bc = (255,255,255) if i == cur_c else (90,95,110)
-                pygame.draw.rect(screen, bc, rect, width=bw, border_radius=5)
+                pygame.draw.rect(screen, bc, rect, width=bw, border_radius=6)
             k = font_hint.render(str(i+1), True, (210,210,210))
-            screen.blit(k, (rect.centerx - k.get_width()//2, rect.bottom + 2))
+            screen.blit(k, (rect.centerx - k.get_width()//2, rect.bottom + 4))
 
+        # ── turn indicator ──
         if not game_over:
             tc = (255,220,120) if turn == P1 else (130,205,255)
             wt = font_small.render(f"Player {turn}'s turn — press 1 to 6", True, tc)
-            screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 18))
+            screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 22))
 
+        # ── bottom hint ──
         h = font_hint.render("H = hub   R = restart   Esc = quit", True, (80,85,105))
-        screen.blit(h, (WIN_W//2 - h.get_width()//2, WIN_H - 16))
+        screen.blit(h, (WIN_W//2 - h.get_width()//2, WIN_H - 20))
 
+        # ── game over overlay ──
         if game_over:
             ov = pygame.Surface((WIN_W, WIN_H), pygame.SRCALPHA)
             ov.fill((0, 0, 0, 155))
@@ -291,11 +304,11 @@ def run_game():
                 msg = f"Player {winner} Wins!"
                 mc  = (255,220,120) if winner == P1 else (130,205,255)
             wt2 = font_title.render(msg, True, mc)
-            screen.blit(wt2, (WIN_W//2 - wt2.get_width()//2, WIN_H//2 - 46))
+            screen.blit(wt2, (WIN_W//2 - wt2.get_width()//2, WIN_H//2 - 60))
             sc3 = font_label.render(f"{p1_count} vs {p2_count}  (of {total} squares)", True, (220,220,220))
-            screen.blit(sc3, (WIN_W//2 - sc3.get_width()//2, WIN_H//2 + 6))
+            screen.blit(sc3, (WIN_W//2 - sc3.get_width()//2, WIN_H//2 + 4))
             re  = font_small.render("R = play again   |   H = hub   |   Esc = quit", True, (165,165,165))
-            screen.blit(re, (WIN_W//2 - re.get_width()//2, WIN_H//2 + 42))
+            screen.blit(re, (WIN_W//2 - re.get_width()//2, WIN_H//2 + 48))
 
         pygame.display.flip()
 
