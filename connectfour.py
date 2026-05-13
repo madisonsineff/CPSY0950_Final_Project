@@ -207,3 +207,8 @@ def run_pygame_game() -> None:
         clock.tick(60)
 
     pygame.quit()
+
+
+if __name__ == "__main__":
+    # When launched from GamePython_MAINHUB.py, ensure the game actually starts.
+    run_pygame_game()
