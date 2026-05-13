@@ -100,8 +100,6 @@ General controls depend on the game, but may include:
 
 ## Challenges We Encountered
 
-## Challenges We Encountered
-
 While developing this project, we faced a variety of challenges. Although the project was not always technically challenging in the strictest sense because we used AI tools such as Cursor to help with portions of the code, it still required a lot of hands-on editing, testing, and debugging. We did not want to fully rely on AI-generated code without understanding it, so a major part of the process was reading through the code, making changes ourselves, fixing errors, and making sure each part of the project actually worked exactly the way we envisioned.
 
 One challenge was adjusting the visual layout of the games. Many parts of the project, such as buttons, game boards, text, backgrounds, and interactive elements, required precise spacing and positioning. This often involved a lot of trial and error because we had to launch the app repeatedly to see whether the spacing looked correct. Even small changes to coordinates, font sizes, or image placement could affect the appearance of the whole game screen, so this process was time-consuming.
@@ -114,4 +112,4 @@ Cup Pong was easily the most difficult games to develop because, unlike the othe
 
 Overall, even with AI assistance, this project required significant time, effort, and problem-solving. We spent many hours testing, editing, troubleshooting, and making design decisions. The process helped us learn how to use AI as a support tool rather than a replacement for our own understanding, while also giving us more experience with Python, Pygame, debugging, and interactive game development.
 
-## Have fun!
+# Have fun!
