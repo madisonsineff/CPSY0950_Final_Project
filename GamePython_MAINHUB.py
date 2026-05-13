@@ -40,6 +40,7 @@ class App:
             {"title": "Anagrams", "script": self.base_dir / "anagrams.py", "image": self.base_dir / "wordhuntbackground.png", "image_zoom": 0.05},
             {"title": "Four in a Row", "script": self.base_dir / "connect_4.py", "image": self.base_dir / "connect4background.jpg"},
             {"title": "Cup Pong", "script": self.base_dir / "cuppong.py", "image": self.base_dir / "cuppongbackground.webp"},
+            {"title": "Filler", "script": self.base_dir / "filler.py", "image": self.base_dir / "filler_background.jpg", "image_zoom": 0.05},
         ]
 
         #makes the buttons for game scripts into a clickable rectangle 
@@ -114,14 +115,24 @@ class App:
 
     #specific dimensions of the build buttons 
     def build_buttons(self):
+        """Four game tiles in a centered 2×2 grid (extra games wrap to more rows)."""
         buttons = []
         button_w, button_h = 320, 90
-        spacing = 30
-        start_x = (self.size[0] - button_w) // 2
-        start_y = 220
+        gap_x, gap_y = 28, 28
+        cols = 2
+        n = len(self.games)
+        rows = (n + cols - 1) // cols
+        grid_w = cols * button_w + (cols - 1) * gap_x
+        grid_h = rows * button_h + (rows - 1) * gap_y
+        origin_x = (self.size[0] - grid_w) // 2
+        origin_y = (self.size[1] - grid_h) // 2 + 20
 
-        for i, game in enumerate(self.games): #enables creation of multiple buttons for each game script
-            rect = pygame.Rect(start_x, start_y + i * (button_h + spacing), button_w, button_h)
+        for i, game in enumerate(self.games):
+            col = i % cols
+            row = i // cols
+            x = origin_x + col * (button_w + gap_x)
+            y = origin_y + row * (button_h + gap_y)
+            rect = pygame.Rect(int(x), int(y), button_w, button_h)
             buttons.append({"rect": rect, "game": game})
         return buttons
 
