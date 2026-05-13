@@ -149,7 +149,7 @@ def run_pygame_game():
     font_title  = pygame.font.SysFont("chalkboard", 36, bold=True)
     font_label  = pygame.font.SysFont("optima", 22, bold=True)
     font_small  = pygame.font.SysFont("optima", 18)
-    font_hint   = pygame.font.SysFont("optima", 14)
+    font_hint   = pygame.font.SysFont("optima", 18)
     font_instr  = pygame.font.SysFont("optima", 19)
     font_instr_bold = pygame.font.SysFont("optima", 20, bold=True)
 
@@ -249,7 +249,7 @@ def run_pygame_game():
         elif game.is_draw:
             msg, wc = "It's a draw!  Press R to play again.", (200,200,200)
         else:
-            who = "Red" if game.current_player == P1 else "Yellow"
+            who = "Player 1" if game.current_player == P1 else "Player 2"
             wc  = P1_COLOR if game.current_player == P1 else P2_COLOR
             msg = f"{who}'s turn — click a column or press 1–7"
 
