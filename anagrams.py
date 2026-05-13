@@ -229,12 +229,15 @@ ANAGRAM_SOLUTION_DATABASE = [
 
 
 def _anagrams_music_file() -> pathlib.Path:
-    """Background track next to this file: ``anagrams_music.mp3`` preferred, else ``anagrams_music.ogg``."""
+    """Background track next to this file: ``anagrams_audio.mp3`` or ``anagrams_music.ogg``."""
     base = pathlib.Path(__file__).resolve().parent
     mp3 = base / "anagrams_audio.mp3"
     if mp3.exists():
         return mp3
-    
+    ogg = base / "anagrams_music.ogg"
+    if ogg.exists():
+        return ogg
+    return mp3
 
 
 def _start_anagrams_background_music() -> None:
@@ -310,8 +313,10 @@ class AnagramsGame:
         self.word_bank_panel_rect = self._word_bank_panel_rect() # initial word bank panel rectangle
 
         _start_anagrams_background_music()
-        w = self.size[0] # width of the screen
-        return pygame.Rect(80, 280, w - 160, 200) # rectangle for the word bank panel
+
+    def _word_bank_panel_rect(self):
+        w = self.size[0]
+        return pygame.Rect(80, 280, w - 160, 200)
 
     def _word_bank_inner_rect(self, panel):
         """Area below the title, reserved for wrapped words (scrollbar uses right strip).""" # area below the title, reserved for wrapped words (scrollbar uses right strip)
