@@ -136,8 +136,8 @@ def run_pygame_game():
     BOARD_H = ROWS    * CELL + (ROWS+1)    * GAP
     TOP_H   = 90     # title + turn indicator
     BOT_H   = 52     # hint line
-    WIN_W   = BOARD_W + 80      # a little padding each side
-    WIN_H   = TOP_H + BOARD_H + BOT_H
+    WIN_W   = 1200
+    WIN_H   = 800
 
     BOARD_X = (WIN_W - BOARD_W) // 2
     BOARD_Y = TOP_H
