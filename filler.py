@@ -269,7 +269,7 @@ def run_game():
         sw_gap  = 8
         total_w = NUM_COLORS * sw + (NUM_COLORS-1) * sw_gap
         sw_x0   = WIN_W//2 - total_w//2
-        sw_y    = BOARD_Y + BOARD_PY + 8
+        sw_y    = BOARD_Y + BOARD_PY + 2
 
         for i in range(NUM_COLORS):
             sx   = sw_x0 + i*(sw+sw_gap)
@@ -287,7 +287,7 @@ def run_game():
         if not game_over:
             tc = (255,220,120) if turn == P1 else (130,205,255)
             wt = font_small.render(f"Player {turn}'s turn — press 1 to 6", True, tc)
-            screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 14))
+            screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 10))
 
         # ── bottom hint ──
         h = font_hint.render("H = hub   R = restart   Esc = quit", True, (80,85,105))
