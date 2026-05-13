@@ -227,6 +227,36 @@ ANAGRAM_SOLUTION_DATABASE = [
     },
 ]
 
+
+def _anagrams_music_file() -> pathlib.Path:
+    """Background track next to this file: ``anagrams_music.mp3`` preferred, else ``anagrams_music.ogg``."""
+    base = pathlib.Path(__file__).resolve().parent
+    mp3 = base / "anagrams_audio.mp3"
+    if mp3.exists():
+        return mp3
+    
+
+
+def _start_anagrams_background_music() -> None:
+    path = _anagrams_music_file()
+    if not path.exists():
+        return
+    try:
+        pygame.mixer.init()
+        pygame.mixer.music.load(str(path))
+        pygame.mixer.music.set_volume(0.32)
+        pygame.mixer.music.play(-1)
+    except pygame.error:
+        pass
+
+
+def _stop_anagrams_background_music() -> None:
+    try:
+        pygame.mixer.music.stop()
+    except (pygame.error, AttributeError):
+        pass
+
+
 # creates the entire anagrams game as a class object; essentially the control center for display, game state, and gameplay
 class AnagramsGame:
     def __init__(self):
@@ -279,7 +309,7 @@ class AnagramsGame:
         self.word_bank_scroll_to_bottom = False # initial word bank scroll to bottom
         self.word_bank_panel_rect = self._word_bank_panel_rect() # initial word bank panel rectangle
 
-    def _word_bank_panel_rect(self):
+        _start_anagrams_background_music()
         w = self.size[0] # width of the screen
         return pygame.Rect(80, 280, w - 160, 200) # rectangle for the word bank panel
 
@@ -382,6 +412,7 @@ class AnagramsGame:
     def _return_to_hub(self):
         if self.hub_script.exists(): # if the hub script exists
             subprocess.Popen([sys.executable, str(self.hub_script)])
+        _stop_anagrams_background_music()
         pygame.quit() # quit pygame
         sys.exit(0)
 
@@ -611,6 +642,7 @@ class AnagramsGame:
             self.draw()
             self.clock.tick(self.fps) # tick the clock to update the game
 
+        _stop_anagrams_background_music()
         pygame.quit() # quit pygame
 
 
