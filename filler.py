@@ -13,6 +13,10 @@ Both players: 1  2  3  4  5  6   (pick a color on your turn)
 H — return to hub at any time
 Esc — quit
 R — restart after game over
+
+Audio
+-----
+Place a file named filler_audio.mp3 (or .ogg) next to this script for music.
 """
 
 from __future__ import annotations
@@ -38,6 +42,31 @@ NUM_COLORS = len(COLORS)
 
 ROWS, COLS = 8, 8
 P1, P2 = 1, 2
+
+
+# ── audio ─────────────────────────────────────────────────────────────────────
+
+def _start_music():
+    base = pathlib.Path(__file__).resolve().parent
+    for name in ("filler_audio.mp3", "filler_audio.ogg"):
+        p = base / name
+        if p.exists():
+            try:
+                pygame.mixer.init()
+                pygame.mixer.music.load(str(p))
+                pygame.mixer.music.set_volume(0.30)
+                pygame.mixer.music.play(-1)
+            except pygame.error:
+                pass
+            return
+
+
+def _stop_music():
+    try:
+        pygame.mixer.music.stop()
+    except Exception:
+        pass
+
 
 # ── board helpers ─────────────────────────────────────────────────────────────
 
@@ -95,6 +124,7 @@ def new_game():
 
 def run_game():
     pygame.init()
+    _start_music()
 
     hub = pathlib.Path(__file__).resolve().parent / "GamePython_MAINHUB.py"
 
@@ -128,7 +158,6 @@ def run_game():
     board, owned, turn, game_over, winner = new_game()
     app_phase = "INSTRUCTIONS"
 
-    # instruction panel sized to fit inside window
     panel_w = min(580, WIN_W - 40)
     panel_h = min(400, WIN_H - 40)
     panel   = pygame.Rect((WIN_W - panel_w)//2, (WIN_H - panel_h)//2, panel_w, panel_h)
@@ -170,7 +199,6 @@ def run_game():
             fnt   = font_instr_bold if kind == "bold" else font_instr
             color = (20, 25, 55)    if kind == "bold" else (55, 60, 90)
             s = fnt.render(text, True, color)
-            # word-wrap safety: clip if wider than panel
             screen.blit(s, (panel.x + 24, y))
             y += 23
 
@@ -191,11 +219,9 @@ def run_game():
     def draw_game():
         screen.fill((22, 26, 38))
 
-        # title
         t = font_title.render("Filler", True, (240,240,255))
         screen.blit(t, (WIN_W//2 - t.get_width()//2, 12))
 
-        # board
         for r in range(ROWS):
             for c in range(COLS):
                 rect  = cell_rect(r, c)
@@ -211,7 +237,6 @@ def run_game():
         p2_count = count_owned(owned, P2)
         total    = ROWS * COLS
 
-        # left panel — Player 1
         px1 = SIDE_W // 2
         lbl = font_label.render("Player 1", True, (255,220,120))
         screen.blit(lbl, (px1 - lbl.get_width()//2, BOARD_Y + 8))
@@ -221,7 +246,6 @@ def run_game():
         pygame.draw.circle(screen, COLORS[p1c], (px1, BOARD_Y + 76), 13)
         pygame.draw.circle(screen, (255,225,120), (px1, BOARD_Y + 76), 13, 2)
 
-        # right panel — Player 2
         px2 = BOARD_X + BOARD_PX + SIDE_W // 2
         lbl2 = font_label.render("Player 2", True, (130,205,255))
         screen.blit(lbl2, (px2 - lbl2.get_width()//2, BOARD_Y + 8))
@@ -231,7 +255,6 @@ def run_game():
         pygame.draw.circle(screen, COLORS[p2c], (px2, BOARD_Y + 76), 13)
         pygame.draw.circle(screen, (130,205,255), (px2, BOARD_Y + 76), 13, 2)
 
-        # color swatches
         sw      = 34
         sw_gap  = 7
         total_w = NUM_COLORS * sw + (NUM_COLORS-1) * sw_gap
@@ -250,17 +273,14 @@ def run_game():
             k = font_hint.render(str(i+1), True, (210,210,210))
             screen.blit(k, (rect.centerx - k.get_width()//2, rect.bottom + 2))
 
-        # turn indicator
         if not game_over:
             tc = (255,220,120) if turn == P1 else (130,205,255)
             wt = font_small.render(f"Player {turn}'s turn — press 1 to 6", True, tc)
             screen.blit(wt, (WIN_W//2 - wt.get_width()//2, sw_y + sw + 18))
 
-        # bottom hint
         h = font_hint.render("H = hub   R = restart   Esc = quit", True, (80,85,105))
         screen.blit(h, (WIN_W//2 - h.get_width()//2, WIN_H - 16))
 
-        # game over overlay
         if game_over:
             ov = pygame.Surface((WIN_W, WIN_H), pygame.SRCALPHA)
             ov.fill((0, 0, 0, 155))
@@ -280,6 +300,7 @@ def run_game():
         pygame.display.flip()
 
     def return_to_hub():
+        _stop_music()
         if hub.exists():
             subprocess.Popen([sys.executable, str(hub)])
         pygame.quit()
@@ -336,6 +357,7 @@ def run_game():
             draw_game()
         clock.tick(60)
 
+    _stop_music()
     pygame.quit()
 
 
