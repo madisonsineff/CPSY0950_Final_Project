@@ -120,6 +120,9 @@ def run_pygame_game() -> None:
 
     font = pygame.font.SysFont("chalkboard", 38, bold=True)
     small_font = pygame.font.SysFont("optima", 22)
+    title_font = pygame.font.SysFont("chalkboard", 52, bold=True)
+    panel_title_font = pygame.font.SysFont("optima", 32, bold=True)
+    panel_font = pygame.font.SysFont("optima", 22)
 
     background = None
     if bg_path.exists():
@@ -139,17 +142,82 @@ def run_pygame_game() -> None:
     board_left = (width - board_width) // 2
     board_rect = pygame.Rect(board_left, board_top, board_width, board_pixel_height)
 
+    cx, cy = width // 2, height // 2
+    instr_panel = pygame.Rect(cx - 320, 120, 640, 440)
+    start_rect = pygame.Rect(cx - 140, instr_panel.bottom - 90, 280, 56)
+
     running = True
     message = "Click a column to drop your piece."
+    app_phase = "INSTRUCTIONS"
+
+    def draw_instructions() -> None:
+        if background is not None:
+            screen.blit(background, (0, 0))
+            dim = pygame.Surface((width, height), pygame.SRCALPHA)
+            dim.fill((10, 12, 16, 175))
+            screen.blit(dim, (0, 0))
+        else:
+            screen.fill((20, 40, 90))
+
+        pygame.draw.rect(screen, (248, 250, 255), instr_panel, border_radius=18)
+        pygame.draw.rect(screen, (30, 44, 88), instr_panel, width=3, border_radius=18)
+
+        title = panel_title_font.render("How to play", True, (20, 25, 45))
+        screen.blit(title, (instr_panel.centerx - title.get_width() // 2, instr_panel.y + 26))
+
+        lines = [
+            "Goal: be the first player to get 4 in a row.",
+            "Rows can be horizontal, vertical, or diagonal.",
+            "",
+            "On your turn, click a column to drop your piece.",
+            "Red goes first. Yellow goes second.",
+            "",
+            "Controls:",
+            "  - Enter / Space: start game",
+            "  - Esc: quit",
+            "  - R: restart (after you start playing)",
+        ]
+        y = instr_panel.y + 80
+        for line in lines:
+            if line == "":
+                y += 16
+                continue
+            surf = panel_font.render(line, True, (35, 40, 70))
+            screen.blit(surf, (instr_panel.x + 44, y))
+            y += 30
+
+        mp = pygame.mouse.get_pos()
+        hover = start_rect.collidepoint(mp)
+        fill = (52, 168, 98) if hover else (42, 140, 78)
+        pygame.draw.rect(screen, fill, start_rect, border_radius=12)
+        pygame.draw.rect(screen, (18, 72, 44), start_rect, width=2, border_radius=12)
+        st = panel_title_font.render("Start game", True, (255, 255, 255))
+        screen.blit(st, (start_rect.centerx - st.get_width() // 2, start_rect.centery - st.get_height() // 2))
+
+        pygame.display.flip()
 
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                elif event.key == pygame.K_r:
+                continue
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                running = False
+                continue
+
+            if app_phase == "INSTRUCTIONS":
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    app_phase = "PLAY"
+                    message = "Click a column to drop your piece."
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and start_rect.collidepoint(event.pos):
+                    app_phase = "PLAY"
+                    message = "Click a column to drop your piece."
+                continue
+
+            # PLAY phase events
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
                     game.reset()
                     message = "New game started. Click a column."
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -167,13 +235,18 @@ def run_pygame_game() -> None:
                         else:
                             message = f"Player {game.current_player}'s turn."
 
+        if app_phase == "INSTRUCTIONS":
+            draw_instructions()
+            clock.tick(60)
+            continue
+
         if background is not None:
             screen.blit(background, (0, 0))
         else:
             screen.fill((25, 60, 120))
 
-        title_surface = font.render("Four in a Row", True, (255, 255, 255))
-        screen.blit(title_surface, (width // 2 - title_surface.get_width() // 2, 40))
+        title_surface = title_font.render("Four in a Row", True, (255, 255, 255))
+        screen.blit(title_surface, (width // 2 - title_surface.get_width() // 2, 36))
 
         msg_surface = small_font.render(message, True, (255, 255, 255))
         screen.blit(msg_surface, (width // 2 - msg_surface.get_width() // 2, 100))
