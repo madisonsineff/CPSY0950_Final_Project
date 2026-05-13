@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import math
+import pathlib
 import sys
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -33,6 +34,35 @@ CUP_RACK_SCREEN_BASELINE_WD = CUP_PLANE_WD - 1.5 * PYRAMID_ROW_WD
 # Lateral distance from a standing cup's center <= cup_r * this counts as a sink (cup top / rim band).
 CUP_RIM_PLANE_WH_FRAC = 0.62
 CUP_TOP_SINK_FRAC = 0.58
+
+
+def _cuppong_music_file() -> pathlib.Path:
+    """Background track: ``cuppong_music.mp3`` next to this file (primary); ``cuppong_music.ogg`` if no mp3."""
+    base = pathlib.Path(__file__).resolve().parent
+    mp3 = base / "cup_pong_audio.mp3"
+    if mp3.exists():
+        return mp3
+    return base / "cuppong_music.ogg"
+
+
+def _start_cuppong_background_music() -> None:
+    path = _cuppong_music_file()
+    if not path.exists():
+        return
+    try:
+        pygame.mixer.init()
+        pygame.mixer.music.load(str(path))
+        pygame.mixer.music.set_volume(0.32)
+        pygame.mixer.music.play(-1)  # -1 = loop forever until stop() / quit
+    except pygame.error:
+        pass
+
+
+def _stop_cuppong_background_music() -> None:
+    try:
+        pygame.mixer.music.stop()
+    except (pygame.error, AttributeError):
+        pass
 
 
 def _lip_cross_table_point(
@@ -750,6 +780,7 @@ def run_pygame_gui() -> None:
     screen = pygame.display.set_mode(size, pygame.HWSURFACE | pygame.DOUBLEBUF)
     pygame.display.set_caption("Cup Pong")
     clock = pygame.time.Clock()
+    _start_cuppong_background_music()
 
     # GamePigeon-style: wood floor, bright green felt, white trim, red cups / white rims.
     floor_a = (218, 186, 142)
@@ -1022,6 +1053,7 @@ def run_pygame_gui() -> None:
                     running = False
                 elif game.winner is not None:
                     if event.key in (pygame.K_h, pygame.K_HOME):
+                        _stop_cuppong_background_music()
                         pygame.quit()
                         sys.exit(0)
                     elif event.key in (pygame.K_r, pygame.K_RETURN):
@@ -1031,6 +1063,7 @@ def run_pygame_gui() -> None:
                     if win_btn_play.collidepoint(event.pos):
                         reset_match_from_ui()
                     elif win_btn_home.collidepoint(event.pos):
+                        _stop_cuppong_background_music()
                         pygame.quit()
                         sys.exit(0)
                 elif game.winner is None and phase == "IDLE":
@@ -1331,6 +1364,7 @@ def run_pygame_gui() -> None:
         pygame.display.flip()
         clock.tick(60)
 
+    _stop_cuppong_background_music()
     pygame.quit()
 
 
